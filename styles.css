@@ -111,14 +111,14 @@ main {
   margin-bottom: .7rem;
 }
 
-.fsharp {
+.mark {
   font-size: clamp(4.2rem, 18vw, 11rem);
   font-weight: 900;
   letter-spacing: -.06em;
   color: var(--ink);
   text-shadow: 4px 4px 0 #1a0000;
 }
-.fsharp .acc {
+.mark .acc {
   color: var(--red);
   margin-left: .02em;
 }
