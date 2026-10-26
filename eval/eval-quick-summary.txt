@@ -1,0 +1,19 @@
+Chord-follow evaluation (Karplus-Strong guitar, 4 tunings x 3 tempos x clean/30dB/18dB+hum; frames scored 1 beat after each change)
+blues-7ths           exact 65.2%  majmin 72.0%  root 77.7%  bass 58.9%  latency median 1.34 beats, p90 3.39  missed 8/105
+inversions           exact 77.1%  majmin 91.7%  root 91.9%  bass 54.3%  latency median 0.80 beats, p90 2.77  missed 3/84
+jazzish-m7           exact 60.0%  majmin 79.0%  root 80.1%  bass 58.3%  latency median 1.00 beats, p90 3.27  missed 8/105
+minor-i-VI-III-VII   exact 63.8%  majmin 77.2%  root 77.9%  bass 65.8%  latency median 1.68 beats, p90 3.51  missed 9/147
+pop-I-vi-IV-V        exact 63.6%  majmin 87.0%  root 88.3%  bass 62.0%  latency median 0.89 beats, p90 2.94  missed 13/147
+power                exact 33.5%  majmin 65.4%  root 65.4%  bass 53.0%  latency median 2.57 beats, p90 3.76  missed 20/105
+sus                  exact 51.4%  majmin 69.8%  root 69.9%  bass 62.3%  latency median 1.27 beats, p90 3.34  missed 14/105
+unexpected           exact 76.2%  majmin 81.1%  root 84.0%  bass 61.5%  latency median 0.99 beats, p90 2.93  missed 4/84
+ALL                  exact 61.5%  majmin 78.2%  root 79.7%  bass 59.8%  latency median 1.35 beats, p90 3.36  missed 79/882
+by tuning (majmin):
+  bassvi            69.2%  (48 cases)
+  bassvi-strangle   66.0%  (48 cases)
+  standard          86.6%  (72 cases)
+strangle test on 20261025_224630_GuitarDI.wav (Bass VI profile; reference = unfiltered take, low/mid ratio -0.5 dB, auto-strangle off)
+  HP150 2nd-order, auto-detect: low/mid ratio -10.9 dB, strangle detected YES | agreement with unfiltered: chord 72.8%  root 73.8%  bass 73.9%  key F minor vs F minor
+  HP150 2nd-order, Strangle toggle ON:                         | agreement with unfiltered: chord 73.2%  root 74.2%  bass 74.3%  key F minor
+  HP150 through the GUITAR profile (no bass/strangle handling):   | agreement with unfiltered: chord 2.6%  root 10.5%  bass 8.7%
+per-case CSV: /workspace/session-jam/eval/eval-quick.csv

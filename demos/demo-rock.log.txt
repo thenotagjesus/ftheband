@@ -1,0 +1,258 @@
+style 0 bpm 120 LUFS -14.0417 peak -1 dBFS
+1.88s STATE Playing
+2.00s BAND CHORD G#m
+2.00s bass 39
+2.00s FILL bar 1
+2.50s BAND CHORD E
+2.50s bass 28
+3.00s BAND CHORD E5
+3.00s bass 28
+3.50s BAND CHORD E
+3.50s bass 28
+4.00s BAND CHORD E
+4.00s bass 35
+4.12s bass 35
+4.25s bass 35
+4.37s bass 35
+4.50s BAND CHORD C#m7
+4.50s bass 37
+4.62s bass 37
+4.75s bass 37
+4.87s bass 37
+5.00s BAND CHORD C#m7
+5.00s bass 28
+5.13s bass 28
+5.25s bass 28
+5.50s BAND CHORD C#m7
+5.38s bass 28
+5.50s bass 35
+5.62s bass 35
+5.75s bass 35
+5.87s bass 35
+5.88s FILL bar 3
+6.00s BAND CHORD C#m
+6.00s bass 37
+6.12s bass 37
+6.25s bass 37
+6.37s bass 37
+6.50s BAND CHORD A7
+6.50s bass 31
+6.62s bass 31
+6.75s bass 31
+6.88s bass 31
+7.00s bass 31
+7.12s bass 31
+7.25s bass 31
+7.37s bass 31
+7.50s bass 40
+7.63s bass 40
+7.75s bass 43
+7.87s bass 40
+8.00s BAND CHORD A
+8.00s bass 33
+8.12s bass 33
+8.25s bass 33
+8.38s bass 33
+8.50s bass 33
+8.63s bass 33
+8.75s bass 33
+8.88s bass 33
+9.01s bass 33
+9.12s bass 33
+9.25s bass 33
+9.37s bass 33
+9.50s BAND CHORD B7
+9.50s bass 33
+9.63s bass 33
+9.75s bass 33
+9.87s bass 33
+10.00s BAND CHORD B
+10.00s bass 35
+10.25s bass 35
+10.50s BAND CHORD Bsus4
+10.50s bass 35
+10.75s bass 35
+11.00s BAND CHORD B
+11.00s bass 35
+11.25s bass 42
+11.50s BAND CHORD E
+11.50s bass 47
+11.75s bass 35
+12.00s BAND CHORD E
+12.00s bass 28
+12.25s bass 28
+12.50s BAND CHORD C
+12.50s bass 36
+12.75s bass 36
+13.00s bass 36
+13.25s bass 36
+13.50s bass 36
+13.75s bass 36
+14.00s BAND CHORD C
+14.00s bass 28
+14.12s bass 28
+14.25s bass 28
+14.50s BAND CHORD C
+14.38s bass 28
+14.50s bass 36
+14.62s bass 36
+14.75s bass 36
+14.88s bass 36
+15.00s bass 36
+15.13s bass 36
+15.25s bass 36
+15.38s bass 36
+15.50s bass 43
+15.62s bass 43
+15.75s bass 48
+15.88s STATE Breakdown
+15.88s bass 43
+16.00s bass 36
+17.88s STATE Out
+18.50s BAND CHORD E
+19.00s BAND CHORD E
+19.50s BAND CHORD E
+19.88s STATE Playing
+20.00s bass 28
+20.12s FILL bar 10
+20.25s bass 28
+20.50s BAND CHORD C#m7
+20.50s bass 28
+20.75s bass 28
+21.00s bass 28
+21.25s bass 28
+21.50s bass 28
+21.76s bass 28
+22.00s BAND CHORD C#m
+22.00s bass 37
+22.13s bass 37
+22.25s bass 37
+22.50s BAND CHORD C#m7
+22.38s bass 37
+22.50s bass 28
+22.62s bass 28
+22.75s bass 28
+22.87s bass 28
+23.00s BAND CHORD A7
+23.00s bass 28
+23.12s bass 28
+23.25s bass 28
+23.37s bass 28
+23.50s BAND CHORD A
+23.50s bass 40
+23.63s bass 40
+23.75s bass 45
+23.88s bass 40
+24.00s bass 33
+24.25s bass 33
+24.50s BAND CHORD B7
+24.50s bass 35
+24.74s bass 35
+25.00s BAND CHORD B7
+25.00s bass 33
+25.25s bass 33
+25.50s bass 33
+25.75s bass 33
+26.00s BAND CHORD B
+26.00s bass 39
+26.25s bass 39
+26.50s BAND CHORD E
+26.50s bass 28
+26.75s bass 28
+27.00s bass 28
+27.25s bass 35
+27.50s bass 40
+27.75s bass 28
+28.00s bass 28
+28.25s bass 28
+28.50s BAND CHORD C#m7
+28.50s bass 37
+28.75s bass 37
+29.00s bass 37
+29.25s bass 37
+29.50s BAND CHORD C#m
+29.50s bass 37
+29.75s bass 37
+30.00s bass 37
+30.12s bass 37
+30.25s bass 37
+30.50s BAND CHORD A
+30.38s bass 37
+30.50s bass 37
+30.62s bass 37
+30.75s bass 37
+30.87s bass 37
+31.00s bass 37
+31.13s bass 37
+31.25s bass 37
+31.38s bass 37
+31.50s bass 40
+31.62s bass 40
+31.75s bass 49
+31.87s bass 40
+32.00s BAND CHORD A
+32.00s bass 33
+32.12s bass 33
+32.25s bass 33
+32.37s bass 33
+32.51s bass 33
+32.63s bass 33
+32.75s bass 33
+32.88s bass 33
+33.00s bass 33
+33.13s bass 33
+33.25s bass 33
+33.37s bass 33
+33.50s BAND CHORD A5
+33.50s bass 33
+33.62s bass 33
+33.75s bass 33
+33.87s bass 33
+33.88s FILL bar 17
+33.88s STATE Breakdown
+34.00s bass 33
+35.88s STATE Out
+1.59s DETECTED G#m/D#
+2.09s DETECTED E7/G#
+2.19s DETECTED E
+2.87s DETECTED E5
+3.13s DETECTED E
+4.15s DETECTED C#m7
+5.71s DETECTED C#m/E
+6.18s DETECTED A7/G
+6.74s DETECTED A
+6.84s DETECTED A7/G
+6.89s DETECTED A
+7.35s DETECTED A7/G
+7.40s DETECTED A
+8.17s DETECTED B7/A
+8.27s DETECTED A
+8.68s DETECTED B7/A
+8.78s DETECTED A
+8.95s DETECTED B7/A
+9.81s DETECTED B
+10.36s DETECTED Bsus4
+10.85s DETECTED B
+10.92s DETECTED Bsus4
+11.22s DETECTED E/B
+11.71s DETECTED E5
+11.81s DETECTED E
+12.24s DETECTED C/E
+18.19s DETECTED E/B
+18.75s DETECTED E5
+18.85s DETECTED E/B
+20.33s DETECTED C#m7
+21.58s DETECTED C#m
+22.16s DETECTED C#m7
+22.46s DETECTED C#m/E
+22.61s DETECTED A7/G
+22.97s DETECTED A/E
+24.14s DETECTED B7/D#
+25.68s DETECTED B/D#
+26.15s DETECTED E
+26.62s DETECTED G#m/D#
+26.75s DETECTED E
+28.24s DETECTED C#m7
+29.18s DETECTED C#m
+30.12s DETECTED A
+33.15s DETECTED A5

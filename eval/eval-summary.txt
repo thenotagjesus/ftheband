@@ -1,0 +1,11 @@
+Chord-follow evaluation (Karplus-Strong guitar, 4 tunings x 3 tempos x clean/30dB/18dB+hum; frames scored 1 beat after each change)
+blues-7ths           exact 77.8%  majmin 82.9%  root 85.5%  bass 70.2%  latency median 0.90 beats, p90 2.76  missed 3/135
+inversions           exact 80.1%  majmin 95.7%  root 96.1%  bass 63.3%  latency median 0.95 beats, p90 2.81  missed 0/108
+jazzish-m7           exact 78.6%  majmin 90.1%  root 91.7%  bass 69.6%  latency median 0.49 beats, p90 2.30  missed 3/135
+minor-i-VI-III-VII   exact 67.4%  majmin 80.8%  root 80.9%  bass 61.9%  latency median 1.35 beats, p90 3.27  missed 6/189
+pop-I-vi-IV-V        exact 67.4%  majmin 93.6%  root 94.1%  bass 65.8%  latency median 1.00 beats, p90 3.32  missed 5/189
+power                exact 48.6%  majmin 75.7%  root 75.7%  bass 56.2%  latency median 2.46 beats, p90 3.76  missed 7/135
+sus                  exact 67.6%  majmin 79.2%  root 79.3%  bass 71.8%  latency median 0.84 beats, p90 2.93  missed 2/135
+unexpected           exact 77.2%  majmin 87.6%  root 89.3%  bass 72.3%  latency median 1.32 beats, p90 3.26  missed 1/108
+ALL                  exact 70.3%  majmin 85.8%  root 86.7%  bass 66.2%  latency median 1.23 beats, p90 3.23  missed 27/1134
+per-case CSV: /workspace/session-jam/eval/eval.csv
