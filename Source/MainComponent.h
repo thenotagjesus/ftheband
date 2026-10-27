@@ -80,5 +80,5 @@ private:
     Watch splitWatch, micWatch; int64_t secs = 0; double lastCpu = -1, startMB = -1; juce::String lastDeviceSummary;
     int tickCount = 0, ppmHighSeconds = 0, lastOutBlock = 0; double lastOutRate = 0; juce::String splitStatus;
     sj::EngineStatus preview; bool usePreview = false;   // --screens: deterministic sample state
-    friend struct JamPage; friend struct BandPage; friend struct InsertsPage; friend struct AudioPage; friend struct AboutPage;
+    friend struct JamPage; friend struct BandPage; friend struct InsertsPage; friend struct AudioPage; friend struct AboutPage; friend struct SoundsPage;
 };

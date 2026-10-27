@@ -57,13 +57,13 @@ target_sources(SessionJam PRIVATE
     Source/Engine/AudioEngine.cpp
     Source/Engine/PluginChain.cpp
     Source/UI/PluginUI.cpp
+    Source/Net/SamplePacks.cpp
     Source/Recording/StemRecorder.cpp
     Source/Cli/Cli.cpp)
 target_include_directories(SessionJam PRIVATE Source)
 
 target_compile_definitions(SessionJam PRIVATE
     JUCE_WEB_BROWSER=0
-    JUCE_USE_CURL=0
     JUCE_APPLICATION_NAME_STRING="$<TARGET_PROPERTY:SessionJam,JUCE_PRODUCT_NAME>"
     JUCE_APPLICATION_VERSION_STRING="$<TARGET_PROPERTY:SessionJam,JUCE_VERSION>"
     JUCE_PLUGINHOST_VST3=1
@@ -78,6 +78,19 @@ if(WIN32)
     target_compile_definitions(SessionJam PRIVATE JUCE_WASAPI=1 JUCE_DIRECTSOUND=1)
 elseif(UNIX AND NOT APPLE)
     target_compile_definitions(SessionJam PRIVATE JUCE_ALSA=1 JUCE_JACK=1)
+endif()
+# juce::URL needs libcurl on Linux for "Get more sounds" (Windows uses WinINet, macOS NSURLSession).
+if(UNIX AND NOT APPLE)
+    find_package(CURL)
+    if(CURL_FOUND)
+        target_compile_definitions(SessionJam PRIVATE JUCE_USE_CURL=1)
+        target_link_libraries(SessionJam PRIVATE CURL::libcurl)
+    else()
+        target_compile_definitions(SessionJam PRIVATE JUCE_USE_CURL=0)
+        message(WARNING "libcurl not found: 'Get more sounds' will report the catalog as unreachable on this build")
+    endif()
+else()
+    target_compile_definitions(SessionJam PRIVATE JUCE_USE_CURL=0)
 endif()
 
 if(ENABLE_VST2)
@@ -113,7 +126,7 @@ endif()
 
 target_link_libraries(SessionJam PRIVATE
     juce::juce_audio_utils juce::juce_audio_processors juce::juce_audio_devices juce::juce_audio_formats
-    juce::juce_audio_basics juce::juce_dsp juce::juce_gui_extra
+    juce::juce_audio_basics juce::juce_dsp juce::juce_gui_extra juce::juce_cryptography
     PUBLIC juce::juce_recommended_config_flags juce::juce_recommended_warning_flags)
 
 # Headless tools: --eval, --analyze, --render-demo, --jam (same code as the GUI's CLI mode)

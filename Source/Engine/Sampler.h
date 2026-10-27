@@ -102,7 +102,7 @@ private:
     }
 };
 
-/** Loads samples.map (dest|note|vel|keytrack) from the first existing bundled samples folder, then merges the
+/** Loads samples.map (dest|note|vel|keytrack[|set]) from the first existing bundled samples folder, then merges the
     per-user downloaded packs (userSamplesDir()/samples.map, paths "<pack>/drums/x.wav" relative to that folder).
     The bundled set loads first and on its own, so a missing or broken user map never costs the built-in sounds.
     load() does file I/O only (no shared state): safe to run on a background thread, then hand the finished
@@ -155,7 +155,9 @@ struct SampleLibrary {
             const float* d = z->data.getReadPointer (0); int s0 = 0; while (s0 < len - 1 && std::abs (d[s0]) < 0.003f) ++s0;
             s0 = juce::jmax (0, s0 - 16);
             if (s0 > 0) { juce::AudioBuffer<float> b (1, len + 1 - s0); b.copyFrom (0, 0, z->data, 0, s0, len + 1 - s0); z->data = std::move (b); }
-            setFor (t[0]).zones.push_back (std::move (z)); ++n;
+            auto& dst = t.size() >= 5 && t[4] == "drums" ? drums : t.size() >= 5 && t[4] == "bass" ? bass
+                      : t.size() >= 5 && t[4] == "keys" ? keys : setFor (t[0]);   // 5th field = chair set (user packs)
+            dst.zones.push_back (std::move (z)); ++n;
         }
         return n;
     }

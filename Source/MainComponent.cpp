@@ -2,6 +2,7 @@
 // Copyright (C) 2026 Session Jam contributors
 #include "MainComponent.h"
 #include "Util/ProcStats.h"
+#include "Net/SamplePacks.h"
 using namespace sj;
 
 #ifndef SESSIONJAM_DONATE_URL
@@ -476,11 +477,113 @@ struct AudioPage : Content {
     void paint (juce::Graphics& g) override { g.fillAll (bg); }
 };
 
+// ================================================================================================ Get more sounds
+/** Browse the online pack catalog, download/verify/install a pack, hot-load it. Designed for 1200x600 (fits 1280x720).
+    All network + disk + decoding happens on CatalogFetcher / PackInstaller threads; the audio thread only ever sees a
+    finished BandConfig swapped in lock-free. Offline = a message here, bundled sounds untouched. */
+struct SoundsPage : Content, juce::ListBoxModel {
+    AudioEngine& e;
+    juce::Label title, status, detail, help; juce::ListBox list { "packs", this };
+    juce::TextButton refresh { "Refresh catalog" }, get { "Download" }, remove { "Remove" }, cancel { "Cancel" }, openFolder { "Open folder" };
+    double prog = 0; juce::ProgressBar bar { prog };
+    CatalogFetcher fetcher; PackInstaller installer;
+    std::vector<PackInfo> packs; bool fetchedOnce = false;
+
+    explicit SoundsPage (AudioEngine& en) : e (en) {
+        for (auto* c : std::initializer_list<juce::Component*> { &title, &status, &detail, &help, &list, &refresh, &get, &remove, &cancel, &openFolder, &bar })
+            addAndMakeVisible (c);
+        styleLabel (title, 22); title.setFont (font (22, true)); title.setText ("Get more sounds", juce::dontSendNotification);
+        styleLabel (status, 14, textDim); styleLabel (help, 13, textDim);
+        styleLabel (detail, 15); detail.setJustificationType (juce::Justification::topLeft); detail.setMinimumHorizontalScale (1.0f);
+        help.setJustificationType (juce::Justification::topLeft);
+        help.setText ("Packs are listed from the Ftheband catalog on GitHub. Only licence-checked CC0 / CC-BY packs are offered.\n"
+                      "Downloads go to " + SampleLibrary::userSamplesDir().getFullPathName() + " and are sha256-verified.\n"
+                      "The built-in sounds always work, online or not.", juce::dontSendNotification);
+        list.setRowHeight (30); list.setColour (juce::ListBox::backgroundColourId, panel2);
+        refresh.onClick = [this] { startFetch(); };
+        get.onClick = [this] { if (auto* p = selected()) installer.start (*p, [this] (bool ok, juce::String m, std::shared_ptr<SampleLibrary> lib) { finished (ok, m, lib); }); };
+        remove.onClick = [this] { if (auto* p = selected()) installer.startRemove (p->id, [this] (bool ok, juce::String m, std::shared_ptr<SampleLibrary> lib) { finished (ok, m, lib); }); };
+        cancel.onClick = [this] { installer.cancel(); };
+        openFolder.onClick = [] { auto d = SampleLibrary::userSamplesDir(); d.createDirectory(); d.startAsProcess(); };
+        // installed-but-offline packs still show (and can be removed) before any catalog fetch
+        packs = SamplePacks::installed(); list.updateContent();
+        status.setText (packs.empty() ? "Press Refresh catalog to see available packs." : "Installed packs shown. Refresh to see the catalog.", juce::dontSendNotification);
+        updateButtons();
+    }
+    const PackInfo* selected() const { const int r = list.getSelectedRow(); return r >= 0 && r < (int) packs.size() ? &packs[(size_t) r] : nullptr; }
+    void startFetch() {
+        if (fetcher.busy()) return;
+        status.setText ("Fetching catalog...", juce::dontSendNotification); fetchedOnce = true;
+        fetcher.fetch ([this] (bool ok, std::vector<PackInfo> p, juce::String err) {
+            if (! ok) { status.setText (err, juce::dontSendNotification); return; }   // keep whatever was listed
+            auto inst = SamplePacks::installed();
+            for (auto& i : inst) if (std::none_of (p.begin(), p.end(), [&] (auto& c) { return c.id == i.id; })) p.push_back (i);   // retired from catalog
+            packs = std::move (p); list.updateContent(); list.repaint();
+            status.setText (juce::String ((int) packs.size()) + " pack(s)" + (err.isNotEmpty() ? "  -  " + err : juce::String()), juce::dontSendNotification);
+            selectedRowsChanged (list.getSelectedRow());
+        });
+    }
+    void finished (bool ok, const juce::String& msg, std::shared_ptr<SampleLibrary> lib) {
+        if (ok && lib != nullptr) e.installLibrary (lib);   // message thread; lock-free swap into the band
+        status.setText (msg, juce::dontSendNotification);
+        list.repaint(); selectedRowsChanged (list.getSelectedRow());
+    }
+    void updateButtons() {
+        auto* p = selected(); const bool busy = installer.busy();
+        const bool inst = p != nullptr && SamplePacks::isInstalled (p->id);
+        get.setEnabled (! busy && p != nullptr && ! p->entries.empty()); get.setButtonText (inst ? "Re-download" : "Download");
+        remove.setEnabled (! busy && inst); cancel.setEnabled (busy); refresh.setEnabled (! busy);
+    }
+    // ListBoxModel
+    int getNumRows() override { return (int) packs.size(); }
+    void paintListBoxItem (int row, juce::Graphics& g, int w, int h, bool sel) override {
+        if (row < 0 || row >= (int) packs.size()) return;
+        auto& p = packs[(size_t) row];
+        if (sel) g.fillAll (accent.withAlpha (0.35f));
+        g.setColour (juce::Colours::white); g.setFont (font (15, true));
+        g.drawText (p.name, 10, 0, w - 260, h, juce::Justification::centredLeft, true);
+        g.setColour (textDim); g.setFont (font (13));
+        g.drawText (p.licence + "  " + SamplePacks::formatSize (p.size) + (SamplePacks::isInstalled (p.id) ? "  [installed]" : ""),
+                    w - 250, 0, 240, h, juce::Justification::centredRight, true);
+    }
+    void selectedRowsChanged (int) override {
+        if (auto* p = selected())
+            detail.setText (p->name + "\n\nLicence: " + p->licence + "\nCredit: " + (p->credit.isNotEmpty() ? p->credit : juce::String ("-"))
+                            + "\nSize: " + SamplePacks::formatSize (p->size) + "   Files: " + juce::String ((int) p->entries.size())
+                            + "\n\n" + p->description, juce::dontSendNotification);
+        else detail.setText ({}, juce::dontSendNotification);
+        updateButtons();
+    }
+    void tick() override {
+        if (! fetchedOnce && isShowing()) startFetch();   // first visit fetches automatically
+        prog = installer.busy() ? (double) installer.progress() : 0.0;
+        if (installer.busy()) status.setText (installer.status(), juce::dontSendNotification);
+        updateButtons();
+    }
+    void resized() override {
+        auto r = getLocalBounds().reduced (20);
+        auto top = r.removeFromTop (34); title.setBounds (top.removeFromLeft (260));
+        refresh.setBounds (top.removeFromRight (150)); top.removeFromRight (8); openFolder.setBounds (top.removeFromRight (120));
+        r.removeFromTop (8);
+        help.setBounds (r.removeFromBottom (60)); r.removeFromBottom (6);
+        auto st = r.removeFromBottom (26); status.setBounds (st);
+        r.removeFromBottom (6);
+        auto bottom = r.removeFromBottom (32);
+        get.setBounds (bottom.removeFromLeft (130)); bottom.removeFromLeft (8); remove.setBounds (bottom.removeFromLeft (100));
+        bottom.removeFromLeft (8); cancel.setBounds (bottom.removeFromLeft (90)); bottom.removeFromLeft (12); bar.setBounds (bottom);
+        r.removeFromBottom (8);
+        list.setBounds (r.removeFromLeft (juce::jmin (640, r.getWidth() / 2 + 60))); r.removeFromLeft (16);
+        detail.setBounds (r); list.updateContent();
+    }
+    void paint (juce::Graphics& g) override { g.fillAll (bg); }
+};
+
 // ================================================================================================ About
 struct AboutPage : Content {
-    juce::Label title, body; juce::HyperlinkButton licence, source, donate;
+    juce::Label title, body, packCredits; juce::HyperlinkButton licence, source, donate; juce::String lastCredits = "-";
     explicit AboutPage (const juce::String& donateUrl) {
-        for (auto* c : std::initializer_list<juce::Component*> { &title, &body, &licence }) addAndMakeVisible (c);
+        for (auto* c : std::initializer_list<juce::Component*> { &title, &body, &licence, &packCredits }) addAndMakeVisible (c);
+        styleLabel (packCredits, 13); packCredits.setJustificationType (juce::Justification::topLeft); packCredits.setMinimumHorizontalScale (1.0f);
         styleLabel (title, 28); title.setFont (font (28, true));
         title.setText (juce::String ("Session Jam ") + JUCE_APPLICATION_VERSION_STRING, juce::dontSendNotification);
         styleLabel (body, 15); body.setMinimumHorizontalScale (1.0f); body.setJustificationType (juce::Justification::topLeft);
@@ -505,6 +608,13 @@ struct AboutPage : Content {
         title.setBounds (r.removeFromTop (40)); r.removeFromTop (8); body.setBounds (r.removeFromTop (250));
         licence.setBounds (r.removeFromTop (26).removeFromLeft (400)); source.setBounds (r.removeFromTop (26).removeFromLeft (700));
         r.removeFromTop (10); donate.setBounds (r.removeFromTop (30).removeFromLeft (120));
+        r.removeFromTop (6); packCredits.setBounds (r);
+    }
+    int ticks = 0;
+    void tick() override {   // CC-BY credits for downloaded packs (re-read ~1 Hz while visible)
+        if (ticks++ % 30 != 0) return;
+        auto c = SamplePacks::attributionText();
+        if (c != lastCredits) { lastCredits = c; packCredits.setText (c.isEmpty() ? juce::String() : "Downloaded sound packs (CC-BY credits are required; CC0 credited as a courtesy):\n" + c, juce::dontSendNotification); }
     }
     void paint (juce::Graphics& g) override { g.fillAll (bg); }
 };
@@ -531,7 +641,8 @@ MainComponent::MainComponent (bool openAudio) : audioOpen (openAudio)
     add ("Band", new BandPage (*this, engine), 1200, 560);
     auto* ins = new InsertsPage (engine, pluginLibrary); add ("Inserts", ins, 800, 260);
     add ("Audio", new AudioPage (*this), 1150, 620);
-    add ("About", new AboutPage (donateUrl), 900, 400);
+    add ("Get more sounds", new SoundsPage (engine), 1200, 600);
+    add ("About", new AboutPage (donateUrl), 900, 520);
     addAndMakeVisible (tabs); addAndMakeVisible (statusBar); styleLabel (statusBar, 13, textDim);
 
     if (audioOpen) {
@@ -1028,6 +1139,7 @@ static void noFocusOnButtons (juce::Component& c) {
 }
 void MainComponent::timerCallback()
 {
+    engine.collectLibraries();
     if (audioOpen && ++focusTick % 30 == 0) {
         noFocusOnButtons (*this);
         auto* f = juce::Component::getCurrentlyFocusedComponent();
