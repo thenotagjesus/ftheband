@@ -1,4 +1,4 @@
-# Ftheband sound pack catalog
+# FtheBand sound pack catalog
 
 `packs.json` is fetched at runtime by the in-app **Get more sounds** browser from
 `https://raw.githubusercontent.com/thenotagjesus/ftheband/main/catalog/packs.json`.

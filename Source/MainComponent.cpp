@@ -1,15 +1,18 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// Copyright (C) 2026 Session Jam contributors
+// Copyright (C) 2026 FtheBand contributors
 #include "MainComponent.h"
 #include "Util/ProcStats.h"
 #include "Net/SamplePacks.h"
 using namespace sj;
 
-#ifndef SESSIONJAM_DONATE_URL
- #define SESSIONJAM_DONATE_URL ""
+#ifndef FTHEBAND_DISPLAY_VERSION
+ #define FTHEBAND_DISPLAY_VERSION "0.1.0-beta"
 #endif
-#ifndef SESSIONJAM_SOURCE_URL
- #define SESSIONJAM_SOURCE_URL ""
+#ifndef FTHEBAND_DONATE_URL
+ #define FTHEBAND_DONATE_URL ""
+#endif
+#ifndef FTHEBAND_SOURCE_URL
+ #define FTHEBAND_SOURCE_URL ""
 #endif
 
 namespace {
@@ -85,9 +88,9 @@ struct JamPage : Content {
         learnBtn.onClick = [this] { e.learnNoiseNow(); };
         recBtn.onClick = [this] {
             if (e.recorder.isRecording()) e.recorder.stop();
-            else e.startRecording (juce::File::getSpecialLocation (juce::File::userMusicDirectory).getChildFile ("SessionJam Takes"));
+            else e.startRecording (juce::File::getSpecialLocation (juce::File::userMusicDirectory).getChildFile ("Ftheband Takes"));
         };
-        takesBtn.onClick = [] { auto f = juce::File::getSpecialLocation (juce::File::userMusicDirectory).getChildFile ("SessionJam Takes"); f.createDirectory(); f.startAsProcess(); };
+        takesBtn.onClick = [] { auto f = juce::File::getSpecialLocation (juce::File::userMusicDirectory).getChildFile ("Ftheband Takes"); f.createDirectory(); f.startAsProcess(); };
         syncFromEngine();
     }
     /** Start button and Space. Start-when-I-play: toggles the session (armed / stopped). Start-on-button: starts the
@@ -376,16 +379,45 @@ struct AudioPage : Content {
     juce::ComboBox splitBox; juce::Label autoSplit { {}, "Optional, off by default. If your guitar input and output are different physical devices inside ASIO4ALL, their clocks drift (static after a while) unless you use split input." };
     juce::TextButton panelBtn { "Driver control panel" };
     juce::TextButton rescan { "Rescan" };
+    juce::ToggleButton builtin { "Low latency (built-in, no ASIO needed)" };
+    juce::Label builtinStat, asioHelp, asioTm;
+    juce::TextButton installFlex { "Install FlexASIO (free ASIO driver)" };
+    juce::HyperlinkButton asio4allLink { "Get ASIO4ALL (asio4all.org)", juce::URL ("https://asio4all.org") },
+                          flexLink { "FlexASIO on GitHub", juce::URL ("https://github.com/dechamps/FlexASIO") };
+    juce::String builtinMsg;
     juce::ToggleButton lowLat { "Low-latency input mode (WASAPI IAudioClient3, smallest period)" };
     juce::Label bufL { {}, "Output buffer" }, micL { {}, "Microphone (own clock, recorded as the Mic stem)" }, trimL { {}, "Recording trim (ms)" }, bufHint, micStat;
     juce::ComboBox bufBox, micBox;
     juce::Slider trim { juce::Slider::LinearHorizontal, juce::Slider::TextBoxRight };
     explicit AudioPage (MainComponent& mc) : m (mc), sel (mc.deviceManager, 1, 1, 2, 2, false, false, false, false) {
         for (auto* c : std::initializer_list<juce::Component*> { &sel, &dev, &splitL, &splitStat, &splitBox, &autoSplit, &rescan, &panelBtn,
-                                                                  &lowLat, &bufL, &micL, &trimL, &bufHint, &micStat, &bufBox, &micBox, &trim }) addAndMakeVisible (c);
+                                                                  &builtin, &builtinStat, &asioHelp, &asioTm, &installFlex, &asio4allLink, &flexLink, &lowLat, &bufL, &micL, &trimL, &bufHint, &micStat, &bufBox, &micBox, &trim }) addAndMakeVisible (c);
         styleLabel (dev, 14, textDim); styleLabel (splitL, 15); styleLabel (splitStat, 14, textDim);
         styleLabel (bufL, 14); styleLabel (micL, 15); styleLabel (trimL, 14); styleLabel (bufHint, 13, textDim); styleLabel (micStat, 14, textDim);
         micStat.setJustificationType (juce::Justification::topLeft);
+        styleLabel (builtinStat, 13, textDim); builtinStat.setJustificationType (juce::Justification::topLeft);
+        styleLabel (asioHelp, 13, textDim); asioHelp.setJustificationType (juce::Justification::topLeft);
+        styleLabel (asioTm, 12, textDim); asioTm.setJustificationType (juce::Justification::topLeft);
+        asioHelp.setText ("No ASIO driver? Tick \"Low latency (built-in)\" on the right: it uses Windows' own exclusive audio mode, nothing to install.\n"
+                          "Prefer a real ASIO driver? ASIO4ALL is free from https://asio4all.org (not included). FlexASIO (free, MIT licence) is included: "
+                          "the button below runs its installer only when you click it. Restart FtheBand after installing.", juce::dontSendNotification);
+        asioTm.setText ("ASIO is a trademark of Steinberg Media Technologies GmbH. FtheBand is not ASIO-certified and is not endorsed by or affiliated with Steinberg.", juce::dontSendNotification);
+        for (auto* l : { &asio4allLink, &flexLink }) { l->setColour (juce::HyperlinkButton::textColourId, accent); l->setFont (font (13), false, juce::Justification::centredLeft); }
+        installFlex.setEnabled (MainComponent::flexAsioInstaller().existsAsFile());
+        installFlex.setTooltip (installFlex.isEnabled() ? "Runs the bundled FlexASIO installer (drivers\\FlexASIO). Nothing is installed unless you finish it."
+                                                        : "The FlexASIO installer is not next to this FtheBand.exe (drivers\\FlexASIO). Download it from the FlexASIO link.");
+        installFlex.onClick = [this] {
+            const auto f = MainComponent::flexAsioInstaller();
+            if (! f.existsAsFile()) { juce::AlertWindow::showMessageBoxAsync (juce::MessageBoxIconType::InfoIcon, "FlexASIO installer not found", "Download it from https://github.com/dechamps/FlexASIO/releases"); return; }
+            juce::AlertWindow::showOkCancelBox (juce::MessageBoxIconType::QuestionIcon, "Install FlexASIO?",
+                "This starts the FlexASIO installer (MIT licence, github.com/dechamps/FlexASIO). Windows will ask for permission, and nothing is installed unless you finish the installer. Restart FtheBand afterwards to see the new ASIO device.",
+                "Run installer", "Cancel", this, juce::ModalCallbackFunction::create ([f] (int r) { if (r == 1) f.startAsProcess(); }));
+        };
+        builtin.onClick = [this] {
+            const bool on = builtin.getToggleState();
+            builtinStat.setText ("Opening...", juce::dontSendNotification);
+            builtinMsg = m.setBuiltInLowLatency (on); refresh();
+        };
         lowLat.onClick = [this] { m.preferLowLatency = lowLat.getToggleState(); if (m.splitDevice.isNotEmpty()) m.openSplitInput (m.splitType, m.splitDevice);
                                   if (m.micDevice.isNotEmpty()) m.openMicInput (m.micDevice); m.saveSession(); };
         bufBox.onChange = [this] {
@@ -393,7 +425,7 @@ struct AudioPage : Content {
             auto s = m.deviceManager.getAudioDeviceSetup(); if (s.bufferSize == bs) return;
             s.bufferSize = bs; m.deviceManager.setAudioDeviceSetup (s, true);   // change listener reopens the split inputs
         };
-        bufHint.setText ("256 recommended (ASIO4ALL: never below 128); raise it if the Jam tab shows audio glitches", juce::dontSendNotification);
+        bufHint.setText ("128-256 for low latency (ASIO4ALL: never below 128); raise it if the Jam tab shows audio glitches", juce::dontSendNotification);
         micBox.onChange = [this] {
             const int id = micBox.getSelectedId(); if (id <= 0) return;
             if (id == 1) m.closeMicInput(); else m.openMicInput (micBox.getText());
@@ -425,6 +457,10 @@ struct AudioPage : Content {
         splitBox.setSelectedId (m.splitDevice.isEmpty() || idx < 0 ? 1 : idx + 2, juce::dontSendNotification);
         { auto* d = m.deviceManager.getCurrentAudioDevice(); panelBtn.setEnabled (d != nullptr && d->hasControlPanel()); }
         lowLat.setToggleState (m.preferLowLatency, juce::dontSendNotification);
+        builtin.setToggleState (m.isBuiltInLowLatency(), juce::dontSendNotification);
+        builtinStat.setText (builtinMsg.isNotEmpty() ? builtinMsg
+            : juce::String ("WASAPI exclusive mode at the smallest stable buffer (128-256 smp at 48 kHz). The output device is used exclusively, so other apps are silent on it. "
+                            "The guitar input keeps its own clock (split input, drift-corrected). Falls back to shared WASAPI if it cannot open."), juce::dontSendNotification);
         trim.setValue (m.trimMs, juce::dontSendNotification);
         micBox.clear (juce::dontSendNotification);
         micBox.addItem ("(no microphone)", 1);
@@ -460,7 +496,13 @@ struct AudioPage : Content {
     }
     void resized() override {
         auto r = getLocalBounds().reduced (16); dev.setBounds (r.removeFromTop (24)); r.removeFromTop (8);
-        sel.setBounds (r.removeFromLeft (640)); r.removeFromLeft (20);
+        auto left = r.removeFromLeft (640); r.removeFromLeft (20);
+        asioTm.setBounds (left.removeFromBottom (30)); left.removeFromBottom (4);
+        auto lrow = left.removeFromBottom (26); installFlex.setBounds (lrow.removeFromLeft (250)); lrow.removeFromLeft (10);
+        asio4allLink.setBounds (lrow.removeFromLeft (190)); flexLink.setBounds (lrow.removeFromLeft (150)); left.removeFromBottom (6);
+        asioHelp.setBounds (left.removeFromBottom (66)); left.removeFromBottom (8);
+        sel.setBounds (left);
+        builtin.setBounds (r.removeFromTop (26)); builtinStat.setBounds (r.removeFromTop (52)); r.removeFromTop (10);
         splitL.setBounds (r.removeFromTop (24)); r.removeFromTop (6);
         auto row = r.removeFromTop (28); splitBox.setBounds (row.removeFromLeft (juce::jmin (420, row.getWidth() - 270))); row.removeFromLeft (8); rescan.setBounds (row.removeFromLeft (80)); row.removeFromLeft (8); panelBtn.setBounds (row.removeFromLeft (juce::jmin (170, row.getWidth())));
         r.removeFromTop (4); autoSplit.setBounds (r.removeFromTop (34));
@@ -496,9 +538,9 @@ struct SoundsPage : Content, juce::ListBoxModel {
         styleLabel (status, 14, textDim); styleLabel (help, 13, textDim);
         styleLabel (detail, 15); detail.setJustificationType (juce::Justification::topLeft); detail.setMinimumHorizontalScale (1.0f);
         help.setJustificationType (juce::Justification::topLeft);
-        help.setText ("Packs are listed from the Ftheband catalog on GitHub. Only licence-checked CC0 / CC-BY packs are offered.\n"
-                      "Downloads go to " + SampleLibrary::userSamplesDir().getFullPathName() + " and are sha256-verified.\n"
-                      "The built-in sounds always work, online or not.", juce::dontSendNotification);
+        help.setText ("Packs are listed from the FtheBand catalog on GitHub. Only licence-checked CC0 / CC-BY packs are offered.\n"
+                      "Packs marked [installed, bundled] ship with the app (samples/packs next to FtheBand.exe): no download needed.\n"
+                      "Other downloads go to " + SampleLibrary::userSamplesDir().getFullPathName() + " and are sha256-verified. The built-in sounds always work, online or not.", juce::dontSendNotification);
         list.setRowHeight (30); list.setColour (juce::ListBox::backgroundColourId, panel2);
         refresh.onClick = [this] { startFetch(); };
         get.onClick = [this] { if (auto* p = selected()) installer.start (*p, [this] (bool ok, juce::String m, std::shared_ptr<SampleLibrary> lib) { finished (ok, m, lib); }); };
@@ -530,9 +572,10 @@ struct SoundsPage : Content, juce::ListBoxModel {
     }
     void updateButtons() {
         auto* p = selected(); const bool busy = installer.busy();
+        const bool bundled = p != nullptr && SamplePacks::isBundled (p->id);
         const bool inst = p != nullptr && SamplePacks::isInstalled (p->id);
-        get.setEnabled (! busy && p != nullptr && ! p->entries.empty()); get.setButtonText (inst ? "Re-download" : "Download");
-        remove.setEnabled (! busy && inst); cancel.setEnabled (busy); refresh.setEnabled (! busy);
+        get.setEnabled (! busy && p != nullptr && ! p->entries.empty() && ! bundled); get.setButtonText (bundled ? "Bundled" : inst ? "Re-download" : "Download");
+        remove.setEnabled (! busy && inst && ! bundled);   // bundled packs live beside the exe: nothing to remove or re-download cancel.setEnabled (busy); refresh.setEnabled (! busy);
     }
     // ListBoxModel
     int getNumRows() override { return (int) packs.size(); }
@@ -543,13 +586,14 @@ struct SoundsPage : Content, juce::ListBoxModel {
         g.setColour (juce::Colours::white); g.setFont (font (15, true));
         g.drawText (p.name, 10, 0, w - 260, h, juce::Justification::centredLeft, true);
         g.setColour (textDim); g.setFont (font (13));
-        g.drawText (p.licence + "  " + SamplePacks::formatSize (p.size) + (SamplePacks::isInstalled (p.id) ? "  [installed]" : ""),
+        g.drawText (p.licence + "  " + SamplePacks::formatSize (p.size) + (SamplePacks::isBundled (p.id) ? "  [installed, bundled]" : SamplePacks::isInstalled (p.id) ? "  [installed]" : ""),
                     w - 250, 0, 240, h, juce::Justification::centredRight, true);
     }
     void selectedRowsChanged (int) override {
         if (auto* p = selected())
             detail.setText (p->name + "\n\nLicence: " + p->licence + "\nCredit: " + (p->credit.isNotEmpty() ? p->credit : juce::String ("-"))
-                            + "\nSize: " + SamplePacks::formatSize (p->size) + "   Files: " + juce::String ((int) p->entries.size())
+                            + "\nSize: " + SamplePacks::formatSize (p->size) + (p->entries.empty() ? juce::String() : "   Files: " + juce::String ((int) p->entries.size()))
+                            + (SamplePacks::isBundled (p->id) ? "\nBundled with the app (installed, loaded on every start)." : juce::String())
                             + "\n\n" + p->description, juce::dontSendNotification);
         else detail.setText ({}, juce::dontSendNotification);
         updateButtons();
@@ -585,27 +629,30 @@ struct AboutPage : Content {
         for (auto* c : std::initializer_list<juce::Component*> { &title, &body, &licence, &packCredits }) addAndMakeVisible (c);
         styleLabel (packCredits, 13); packCredits.setJustificationType (juce::Justification::topLeft); packCredits.setMinimumHorizontalScale (1.0f);
         styleLabel (title, 28); title.setFont (font (28, true));
-        title.setText (juce::String ("Session Jam ") + JUCE_APPLICATION_VERSION_STRING, juce::dontSendNotification);
+        title.setText (juce::String ("FtheBand ") + FTHEBAND_DISPLAY_VERSION, juce::dontSendNotification);
         styleLabel (body, 15); body.setMinimumHorizontalScale (1.0f); body.setJustificationType (juce::Justification::topLeft);
         body.setText ("A band that follows you: play, and drums, bass and keys follow your chords, tempo and intensity.\n\n"
-                      "Copyright (C) 2026 Session Jam contributors.\n"
+                      "Copyright (C) 2026 FtheBand contributors.\n"
                       "This program is free software: you can redistribute it and/or modify it under the terms of the GNU Affero General Public\n"
                       "License, version 3. It comes with ABSOLUTELY NO WARRANTY. If you run a modified version for others over a network,\n"
                       "you must offer them its source. Built with JUCE (AGPLv3).\n\n"
                       "Wurlitzer EP200 samples by Greg Sullivan (sullivang.net), SFZ mapping by kinwie, licensed under CC BY 3.0\n"
-                      "(creativecommons.org/licenses/by/3.0). Trimmed and resampled for Session Jam.\n"
+                      "(creativecommons.org/licenses/by/3.0). Trimmed and resampled for FtheBand.\n"
                       "Drum, cymbal and bass samples: Karoryfer Samples (Gogodze Phu Vol. II, Black And Blue Basses) and\n"
-                      "Versilian Studios (VCSL), CC0. Full list: CREDITS.md.",
+                      "Versilian Studios (VCSL), CC0. Full list: CREDITS.md. Sound packs bundled in samples/packs are listed below.\n\n"
+                      "The release zip also carries the optional FlexASIO installer (MIT licence, github.com/dechamps/FlexASIO); it is never installed\n"
+                      "automatically. Licences of FlexASIO and the libraries it contains: THIRD-PARTY-NOTICES.md.\n"
+                      "ASIO is a trademark and software of Steinberg Media Technologies GmbH. FtheBand is not ASIO-certified and is not endorsed by Steinberg.",
                       juce::dontSendNotification);
         licence.setButtonText ("GNU AGPL v3 licence text"); licence.setURL (juce::URL ("https://www.gnu.org/licenses/agpl-3.0.html"));
-        const juce::String src (SESSIONJAM_SOURCE_URL);
+        const juce::String src (FTHEBAND_SOURCE_URL);
         if (src.isNotEmpty()) { source.setButtonText ("Source code: " + src); source.setURL (juce::URL (src)); addAndMakeVisible (source); }
         if (donateUrl.isNotEmpty()) { donate.setButtonText ("Donate"); donate.setURL (juce::URL (donateUrl)); addAndMakeVisible (donate); }  // hidden unless configured
         for (auto* h : { &licence, &source, &donate }) h->setJustificationType (juce::Justification::left);
     }
     void resized() override {
         auto r = getLocalBounds().reduced (24);
-        title.setBounds (r.removeFromTop (40)); r.removeFromTop (8); body.setBounds (r.removeFromTop (250));
+        title.setBounds (r.removeFromTop (40)); r.removeFromTop (8); body.setBounds (r.removeFromTop (330));
         licence.setBounds (r.removeFromTop (26).removeFromLeft (400)); source.setBounds (r.removeFromTop (26).removeFromLeft (700));
         r.removeFromTop (10); donate.setBounds (r.removeFromTop (30).removeFromLeft (120));
         r.removeFromTop (6); packCredits.setBounds (r);
@@ -614,23 +661,23 @@ struct AboutPage : Content {
     void tick() override {   // CC-BY credits for downloaded packs (re-read ~1 Hz while visible)
         if (ticks++ % 30 != 0) return;
         auto c = SamplePacks::attributionText();
-        if (c != lastCredits) { lastCredits = c; packCredits.setText (c.isEmpty() ? juce::String() : "Downloaded sound packs (CC-BY credits are required; CC0 credited as a courtesy):\n" + c, juce::dontSendNotification); }
+        if (c != lastCredits) { lastCredits = c; packCredits.setText (c.isEmpty() ? juce::String() : "Sound packs, bundled and downloaded (CC-BY credits are required; CC0 credited as a courtesy):\n" + c, juce::dontSendNotification); }
     }
     void paint (juce::Graphics& g) override { g.fillAll (bg); }
 };
 
 // ================================================================================================ MainComponent
 juce::File MainComponent::settingsFile()
-{ return juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory).getChildFile ("SessionJam").getChildFile ("session.xml"); }
+{ return juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory).getChildFile ("Ftheband").getChildFile ("session.xml"); }
 juce::File MainComponent::recordingsFolder()
-{ return juce::File::getSpecialLocation (juce::File::userMusicDirectory).getChildFile ("SessionJam Takes"); }
+{ return juce::File::getSpecialLocation (juce::File::userMusicDirectory).getChildFile ("Ftheband Takes"); }
 
 float MainComponent::autoScaleFor (juce::Rectangle<int> area)
 { return juce::jlimit (0.5f, 1.0f, juce::jmin ((float) area.getWidth() / (float) LogicalW, (float) area.getHeight() / (float) LogicalH)); }
 
 MainComponent::MainComponent (bool openAudio) : audioOpen (openAudio)
 {
-    donateUrl = SESSIONJAM_DONATE_URL;
+    donateUrl = FTHEBAND_DONATE_URL;
     if (audioOpen) loadSession();
     tabs.setTabBarDepth (34); tabs.setOutline (0);
     auto add = [this] (const juce::String& name, Content* c, int mw, int mh) {
@@ -640,9 +687,9 @@ MainComponent::MainComponent (bool openAudio) : audioOpen (openAudio)
     setWantsKeyboardFocus (true);
     add ("Band", new BandPage (*this, engine), 1200, 560);
     auto* ins = new InsertsPage (engine, pluginLibrary); add ("Inserts", ins, 800, 260);
-    add ("Audio", new AudioPage (*this), 1150, 620);
+    add ("Audio", new AudioPage (*this), 1150, 690);
     add ("Get more sounds", new SoundsPage (engine), 1200, 600);
-    add ("About", new AboutPage (donateUrl), 900, 520);
+    add ("About", new AboutPage (donateUrl), 900, 640);
     addAndMakeVisible (tabs); addAndMakeVisible (statusBar); styleLabel (statusBar, 13, textDim);
 
     if (audioOpen) {
@@ -674,7 +721,9 @@ MainComponent::~MainComponent()
     2) Windows, ASIO4ALL present and a USB guitar interface visible to WASAPI: ASIO4ALL OUTPUT-ONLY (enable only the Realtek in
        its panel) @ 48 kHz / 128 (64 if available) + split input: the interface on its own WASAPI stream, drift-corrected;
     3) Windows, ASIO4ALL without a separate cable: ASIO4ALL in+out (one clock domain only if ASIO4ALL is set up that way);
-    4) WASAPI shared 48 kHz: default output; USB guitar interface (if found) as a split input, since it is a different device;
+    4) no ASIO4ALL: built-in low latency = WASAPI exclusive output (48 kHz, smallest stable buffer >= 128, stepped up if it glitches) + the
+       default capture device as a split input; if exclusive fails, the low-latency shared type, then plain shared WASAPI. Plain shared
+       tries the real Windows default output first and then EVERY other output in turn (display/HDMI audio last) until one opens;
     5) else the platform default (ALSA/JACK on Linux, CoreAudio on macOS). Input = mono channel 0.
     Afterwards, maybeAutoSplit() turns any "input device != output device" setup into split-input mode. */
 void MainComponent::setupAudioDevices()
@@ -721,29 +770,22 @@ void MainComponent::setupAudioDevices()
         return deviceManager.setAudioDeviceSetup (s, true).isEmpty() && deviceManager.getCurrentAudioDevice() != nullptr;
     };
    #if JUCE_WINDOWS
-    auto* wasapi = findType ("Windows Audio");
-    juce::ignoreUnused (findCable);   // no name-based adoption of the cable: inputs come from the driver (ASIO4ALL panel) / device settings
-    if (auto* asio = findType ("ASIO")) {
-        asio->scanForDevices();
-        for (auto& n : asio->getDeviceNames()) if (n.containsIgnoreCase ("ASIO4ALL")) {
-            juce::AudioDeviceManager::AudioDeviceSetup s; s.inputDeviceName = s.outputDeviceName = n; s.sampleRate = 48000; s.bufferSize = 128;
-            if (tryApply ("ASIO", s, true)) {
-                if (auto* d = deviceManager.getCurrentAudioDevice())
-                    {   // safe default: 256 (5.3 ms) if the driver allows, else the smallest size >= 256, else the largest it offers
-                        int want = 0; for (int b : d->getAvailableBufferSizes()) if (b >= 256) { want = b; break; }
-                        if (want == 0 && ! d->getAvailableBufferSizes().isEmpty()) want = d->getAvailableBufferSizes().getLast();
-                        if (want > 0 && want != d->getCurrentBufferSizeSamples()) { auto cur = deviceManager.getAudioDeviceSetup(); cur.bufferSize = want; deviceManager.setAudioDeviceSetup (cur, true); } }
-                return;
-            }
+    juce::ignoreUnused (findCable, tryApply);   // no name-based adoption of the cable: inputs come from the driver (ASIO4ALL panel) / device settings
+    const auto lg = [this] (const juce::String& m) { logEvent (m); };
+    if (auto r = sj::devpolicy::openAsio4All (deviceManager, lg); r.ok) { logEvent ("startup audio: " + r.how); return; }
+    // No ASIO4ALL: the built-in low-latency mode (WASAPI exclusive -> low-latency shared -> plain shared, each only if the one before failed).
+    // The guitar (default capture device) then runs as a split input on its own stream, drift-corrected against the output clock.
+    juce::Array<int> ladder;
+    if (auto r = sj::devpolicy::openBuiltIn (deviceManager, true, true, lg, &ladder); r.ok) {
+        logEvent ("startup audio: " + r.how);
+        if (r.type != sj::devpolicy::SharedType && r.input.isEmpty()) {
+            if (auto* sh = findType (sj::devpolicy::SharedType))
+                if (auto in = sj::devpolicy::defaultInputName (*sh); in.isNotEmpty()) openSplitInput (sj::devpolicy::SharedType, in);
+            startBufferTuning (ladder);
         }
+        return;
     }
-    if (wasapi != nullptr) {
-        juce::AudioDeviceManager::AudioDeviceSetup s;
-        s.inputDeviceName = wasapi->getDeviceNames (true)[wasapi->getDefaultDeviceIndex (true)];
-        s.outputDeviceName = wasapi->getDeviceNames (false)[wasapi->getDefaultDeviceIndex (false)];
-        s.sampleRate = 48000; s.bufferSize = 480;
-        if (tryApply ("Windows Audio", s, true)) return;
-    }
+    logEvent ("startup audio: no WASAPI output could be opened; trying the platform default");
    #else
     juce::ignoreUnused (findType);
    #endif
@@ -752,6 +794,93 @@ void MainComponent::setupAudioDevices()
         s.inputDeviceName = pickInput (t); s.sampleRate = 48000;
         if (! tryApply (t->getTypeName(), s, true)) deviceManager.initialiseWithDefaultDevices (1, 2);
     }
+}
+
+// ------------------------------------------------------------------------------------------------ built-in low latency
+bool MainComponent::isBuiltInLowLatency() const
+{
+    const auto t = deviceManager.getCurrentAudioDeviceType();
+    return t == sj::devpolicy::ExclusiveType || t == sj::devpolicy::LowLatType;
+}
+
+/** Audio tab "Low latency (built-in, no ASIO needed)". on = exclusive (else low-latency shared, else shared) output + split input;
+    off = plain shared WASAPI (the Windows default output first, then the others). Returns a one-line result for the UI. */
+juce::String MainComponent::setBuiltInLowLatency (bool on)
+{
+   #if JUCE_WINDOWS
+    const auto lg = [this] (const juce::String& m) { logEvent (m); };
+    juce::String in = splitDevice;
+    if (in.isEmpty()) {
+        const auto cur = deviceManager.getAudioDeviceSetup();
+        if (deviceManager.getCurrentAudioDeviceType().startsWith ("Windows Audio")) in = cur.inputChannels.isZero() ? juce::String() : cur.inputDeviceName;
+        if (in.isEmpty() && on) if (auto* sh = findType (sj::devpolicy::SharedType)) in = sj::devpolicy::defaultInputName (*sh);
+    }
+    logEvent (juce::String ("built-in low latency: user switched ") + (on ? "ON" : "OFF") + " (guitar input: " + (in.isEmpty() ? juce::String ("combined device") : in) + ")");
+    tuneActive = false;
+    juce::Array<int> ladder; sj::devpolicy::Opened r;
+    {
+        const juce::ScopedValueSetter<bool> svs (reconfiguring, true);
+        if (split != nullptr) split->close();
+        r = sj::devpolicy::openBuiltIn (deviceManager, on, ! on && splitDevice.isEmpty(), lg, &ladder);
+    }
+    juce::String msg = r.ok ? r.how : "Could not open any audio output: " + r.how;
+    if (r.ok) {
+        const bool lowLat = r.type != sj::devpolicy::SharedType;
+        if (lowLat || splitDevice.isNotEmpty()) {   // output-only device: the guitar is a split input
+            if (in.isNotEmpty()) openSplitInput (sj::devpolicy::SharedType, in);
+            if (lowLat) startBufferTuning (ladder);
+        }
+        if (on && ! lowLat) msg = "Low latency modes could not be opened - using " + msg;
+    }
+    lastOutBlock = 0;
+    updateLatency (true); saveSession();
+    logEvent ("built-in low latency result: " + msg);
+    return msg;
+   #else
+    juce::ignoreUnused (on); return "Windows only";
+   #endif
+}
+
+/** Smallest stable buffer: for ~30 s after the built-in low-latency mode opens, any new audio glitch / driver xrun steps the buffer up one
+    size (128 -> 160/192 -> ... as the device offers, never above 1024); a clean 30 s settles it. The final size is what session.xml keeps. */
+void MainComponent::startBufferTuning (const juce::Array<int>& ladder)
+{
+    tuneLadder = ladder; tuneActive = ! ladder.isEmpty(); tuneStart = secs; tuneBase = -1;
+    if (auto* d = deviceManager.getCurrentAudioDevice())
+        logEvent ("buffer tuning: started at " + juce::String (d->getCurrentBufferSizeSamples()) + " smp, larger sizes available: " + juce::String (ladder.size()));
+}
+
+void MainComponent::tuneTick()
+{
+    auto* d = deviceManager.getCurrentAudioDevice();
+    if (d == nullptr || ! isBuiltInLowLatency()) { tuneActive = false; return; }
+    const int64_t el = secs - tuneStart;
+    const int64_t g = engine.glitches() + d->getXRunCount();
+    if (el < 4 || tuneBase < 0) { tuneBase = (int) g; return; }   // ignore the start-up (first seconds after a reopen)
+    if (g > tuneBase) {
+        const int cur = d->getCurrentBufferSizeSamples();
+        int next = 0; for (int b : tuneLadder) if (b > cur) { next = b; break; }
+        if (next == 0) { tuneActive = false; logEvent ("buffer tuning: glitch at " + juce::String (cur) + " smp and no larger size offered; staying"); return; }
+        logEvent ("buffer tuning: glitch at " + juce::String (cur) + " smp -> stepping up to " + juce::String (next) + " smp");
+        auto s = deviceManager.getAudioDeviceSetup(); s.bufferSize = next;
+        const auto err = deviceManager.setAudioDeviceSetup (s, true);
+        if (err.isNotEmpty()) { tuneActive = false; logEvent ("buffer tuning: reopen failed: " + err); return; }
+        tuneStart = secs; tuneBase = -1;
+    } else if (el >= 30) {
+        tuneActive = false;
+        logEvent ("buffer tuning: settled at " + juce::String (d->getCurrentBufferSizeSamples()) + " smp (no glitches for " + juce::String (el - 4) + " s)");
+    }
+}
+
+/** Optional FlexASIO (MIT) installer shipped in drivers/FlexASIO next to FtheBand.exe. Only ever started from the button, after a confirm. */
+juce::File MainComponent::flexAsioInstaller()
+{
+    auto exeDir = juce::File::getSpecialLocation (juce::File::currentExecutableFile).getParentDirectory();
+    for (auto& d : { exeDir.getChildFile ("drivers").getChildFile ("FlexASIO"), exeDir.getParentDirectory().getChildFile ("drivers").getChildFile ("FlexASIO") }) {
+        auto found = d.findChildFiles (juce::File::findFiles, false, "FlexASIO-*.exe");
+        if (! found.isEmpty()) return found.getFirst();
+    }
+    return {};
 }
 
 // ------------------------------------------------------------------------------------------------ split input
@@ -772,7 +901,7 @@ bool MainComponent::openSplitInput (const juce::String& typeNameIn, const juce::
     juce::AudioIODeviceType* type = nullptr;
     juce::String typeName = typeNameIn;
    #if JUCE_WINDOWS
-    if (typeName.isEmpty() || typeName.startsWith ("Windows Audio (Low")) typeName = "Windows Audio";   // low-latency twin is chosen in SplitInput
+    if (typeName.isEmpty() || typeName.startsWith ("Windows Audio (")) typeName = "Windows Audio";   // Low Latency / Exclusive output types: the input stream is always plain WASAPI (its low-latency twin is chosen in SplitInput)
    #else
     if (typeName.isEmpty()) typeName = deviceManager.getCurrentAudioDeviceType();
    #endif
@@ -921,7 +1050,7 @@ void MainComponent::maybeAutoSplit()
 }
 
 juce::File MainComponent::driftLogFile()
-{ return juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory).getChildFile ("SessionJam").getChildFile ("drift.log"); }
+{ return juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory).getChildFile ("Ftheband").getChildFile ("drift.log"); }
 
 juce::String MainComponent::splitStatusText() const
 {
@@ -946,7 +1075,7 @@ void MainComponent::logEvent (const juce::String& text)
         if (f.getSize() > 4 * 1024 * 1024) { f.getSiblingFile ("drift.log.1").deleteFile(); f.moveFileTo (f.getSiblingFile ("drift.log.1")); }
         driftLog = std::make_unique<juce::FileOutputStream> (f);
         if (! driftLog->openedOk()) { driftLog.reset(); return; }
-        driftLog->writeText ("# " + juce::Time::getCurrentTime().toISO8601 (true) + " Session Jam " + juce::String (ProjectInfo::versionString)
+        driftLog->writeText ("# " + juce::Time::getCurrentTime().toISO8601 (true) + " FtheBand " + juce::String (FTHEBAND_DISPLAY_VERSION)
                              + " started. drift line: ppm fill(lp) fillMin fillMax target underXfades overXfades stalls drops holds wasapiXruns\n", false, false, nullptr);
     }
     driftLog->writeText (juce::Time::getCurrentTime().toISO8601 (true) + " " + text + "\n", false, false, nullptr);
@@ -992,8 +1121,12 @@ bool MainComponent::watchInput (Watch& w, bool isMic)
 void MainComponent::driftTick()
 {
     ++secs;
+    if (tuneActive) tuneTick();
     if (secs == 1) {   // always leave a trace of what actually opened, even with no split input
         logEvent ("device: " + deviceSummary());
+        if (auto* d = deviceManager.getCurrentAudioDevice())
+            logEvent ("latency: output " + juce::String (d->getOutputLatencyInSamples()) + " smp (" + juce::String (d->getOutputLatencyInSamples() * 1000.0 / d->getCurrentSampleRate(), 2) + " ms) input "
+                      + juce::String (d->getInputLatencyInSamples()) + " smp, buffer " + juce::String (d->getCurrentBufferSizeSamples()) + " smp, type " + deviceManager.getCurrentAudioDeviceType());
         const auto s = deviceManager.getAudioDeviceSetup();
         if (splitDevice.isEmpty() && deviceManager.getCurrentAudioDeviceType() == "ASIO" && ! s.inputChannels.isZero())
             logEvent ("WARNING: guitar comes in through the ASIO driver itself, not a split input. With ASIO4ALL combining a USB cable and the "

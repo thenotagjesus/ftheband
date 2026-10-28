@@ -1,16 +1,16 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// Copyright (C) 2026 Session Jam contributors
+// Copyright (C) 2026 FtheBand contributors
 #include "UI/PluginUI.h"
 
 namespace sj {
 juce::File PluginLibrary::dir()
-{ return juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory).getChildFile ("SessionJam"); }
+{ return juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory).getChildFile ("Ftheband"); }
 
 PluginLibrary::PluginLibrary (PluginChain& c) : chain (c)
 {
     dir().createDirectory();
     juce::PropertiesFile::Options o;
-    o.applicationName = "scanner"; o.filenameSuffix = ".settings"; o.folderName = "SessionJam";
+    o.applicationName = "scanner"; o.filenameSuffix = ".settings"; o.folderName = "Ftheband";
     o.osxLibrarySubFolder = "Application Support";
     props = std::make_unique<juce::PropertiesFile> (dir().getChildFile ("scanner.settings"), o);
     if (auto xml = juce::XmlDocument::parse (dir().getChildFile ("plugins.xml")))

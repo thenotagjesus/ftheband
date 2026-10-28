@@ -1,0 +1,278 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright (C) 2026 FtheBand contributors
+#
+# Windows release build: Release, ASIO ON (Steinberg ASIO SDK fetched under its GPLv3 option, sha256-checked),
+# VST2 OFF, then Authenticode signing (optional), then tools/package-win.ps1 (6 CC0 packs + FlexASIO 1.10b, all sha256-verified).
+# Runs on a version tag (v*) or by hand (Actions -> release -> Run workflow). It never creates a GitHub Release;
+# it only uploads the zip as a workflow artifact. Attach it to a Release yourself.
+#
+# Signing is chosen like this (docs/CODE-SIGNING.md has the full set-up):
+#   repo variable SIGNING_PROVIDER = signpath | azure | none      (empty = auto)
+#   auto      -> SignPath if SIGNPATH_API_TOKEN (secret) and SIGNPATH_ORGANIZATION_ID (variable) exist, otherwise UNSIGNED
+#   signpath  -> SignPath Foundation (primary path). Needs the secret + variables listed below, otherwise the run fails.
+#   azure     -> Azure Artifact Signing (formerly Trusted Signing). Optional and OFF unless you set SIGNING_PROVIDER=azure.
+#   none      -> always unsigned
+# If nothing is configured the build still succeeds and the zip is clearly named "unsigned".
+#
+# SignPath secrets/variables:  secret SIGNPATH_API_TOKEN; variables SIGNPATH_ORGANIZATION_ID, SIGNPATH_PROJECT_SLUG (default ftheband),
+#                              SIGNPATH_SIGNING_POLICY_SLUG (default release-signing)
+# Azure secrets/variables:     secrets AZURE_CLIENT_ID, AZURE_TENANT_ID, AZURE_SUBSCRIPTION_ID (OIDC, no client secret);
+#                              variables AZURE_SIGNING_ENDPOINT, AZURE_SIGNING_ACCOUNT, AZURE_CERT_PROFILE
+name: release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      signing:
+        description: 'auto = use the configured signing provider; none = force an unsigned build'
+        type: choice
+        options: [auto, none]
+        default: auto
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  windows:
+    name: Build, sign and package (Windows x64)
+    runs-on: windows-latest
+    # SignPath release signing waits for a human approval, so leave room for it (GitHub's hard cap is 360 min).
+    timeout-minutes: 340
+    permissions:
+      contents: read
+      actions: read      # SignPath reads the workflow run to verify where the artifact came from
+      id-token: write    # only used when SIGNING_PROVIDER=azure (OIDC login); harmless otherwise
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      SIGNING_INPUT: ${{ github.event.inputs.signing }}
+      SIGNING_PROVIDER_VAR: ${{ vars.SIGNING_PROVIDER }}
+      SIGNPATH_API_TOKEN: ${{ secrets.SIGNPATH_API_TOKEN }}
+      SIGNPATH_ORGANIZATION_ID: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+      SIGNPATH_PROJECT_SLUG: ${{ vars.SIGNPATH_PROJECT_SLUG || 'ftheband' }}
+      SIGNPATH_SIGNING_POLICY_SLUG: ${{ vars.SIGNPATH_SIGNING_POLICY_SLUG || 'release-signing' }}
+      AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+      AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+      AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      AZURE_SIGNING_ENDPOINT: ${{ vars.AZURE_SIGNING_ENDPOINT }}
+      AZURE_SIGNING_ACCOUNT: ${{ vars.AZURE_SIGNING_ACCOUNT }}
+      AZURE_CERT_PROFILE: ${{ vars.AZURE_CERT_PROFILE }}
+    steps:
+      - name: Check out
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Resolve version and signing provider
+        id: cfg
+        run: |
+          $cm = Get-Content CMakeLists.txt -Raw
+          $display = [regex]::Match($cm, 'set\(FTHEBAND_DISPLAY_VERSION\s+"([^"]+)"').Groups[1].Value
+          $numeric = [regex]::Match($cm, 'project\(FtheBand\s+VERSION\s+([0-9.]+)').Groups[1].Value
+          if (-not $display -or -not $numeric) { throw "Could not read the version from CMakeLists.txt" }
+          if ($env:GITHUB_REF_TYPE -eq 'tag') {
+            $tagVersion = $env:GITHUB_REF_NAME -replace '^v', ''
+            if ($tagVersion -ne $display) { throw "Tag $($env:GITHUB_REF_NAME) does not match FTHEBAND_DISPLAY_VERSION $display in CMakeLists.txt. Bump the version first, then tag v$display." }
+          }
+          "version=$display" >> $env:GITHUB_OUTPUT
+          "product_version=$numeric" >> $env:GITHUB_OUTPUT
+
+          # ---- which signing provider?
+          $want = "$env:SIGNING_PROVIDER_VAR".Trim().ToLower()
+          if ("$env:SIGNING_INPUT" -eq 'none') { $want = 'none' }
+          if ($want -notin @('', 'signpath', 'azure', 'none')) { throw "SIGNING_PROVIDER must be signpath, azure, none or empty (got '$want')" }
+          $spOk = [bool]$env:SIGNPATH_API_TOKEN -and [bool]$env:SIGNPATH_ORGANIZATION_ID
+          $azOk = [bool]$env:AZURE_CLIENT_ID -and [bool]$env:AZURE_TENANT_ID -and [bool]$env:AZURE_SUBSCRIPTION_ID -and
+                  [bool]$env:AZURE_SIGNING_ENDPOINT -and [bool]$env:AZURE_SIGNING_ACCOUNT -and [bool]$env:AZURE_CERT_PROFILE
+          $provider = 'none'
+          switch ($want) {
+            ''         { if ($spOk) { $provider = 'signpath' } }
+            'signpath' { if (-not $spOk) { throw "SIGNING_PROVIDER=signpath but SIGNPATH_API_TOKEN (secret) or SIGNPATH_ORGANIZATION_ID (variable) is missing" }; $provider = 'signpath' }
+            'azure'    { if (-not $azOk) { throw "SIGNING_PROVIDER=azure but one of the AZURE_* secrets/variables is missing (see header of release.yml)" }; $provider = 'azure' }
+            'none'     { $provider = 'none' }
+          }
+          "provider=$provider" >> $env:GITHUB_OUTPUT
+          Write-Host "version=$display  product_version=$numeric  signing provider=$provider"
+          if ($provider -eq 'none') { Write-Host "::warning title=Unsigned build::No code signing is configured (or signing=none). The exe will trigger SmartScreen / Smart App Control. See docs/CODE-SIGNING.md." }
+
+      - name: Fetch ASIO SDK (GPLv3 option) and verify sha256
+        id: asio
+        run: |
+          # URL and hash come from CMakeLists.txt so there is a single source of truth.
+          $cm = Get-Content CMakeLists.txt -Raw
+          $url = [regex]::Match($cm, 'URL\s+(https://download\.steinberg\.net/\S+\.zip)').Groups[1].Value
+          $sha = [regex]::Match($cm, 'URL_HASH\s+SHA256=([0-9a-fA-F]{64})').Groups[1].Value
+          if (-not $url -or -not $sha) { throw "Could not find the ASIO SDK URL / hash in CMakeLists.txt" }
+          $zip = Join-Path $env:RUNNER_TEMP 'asiosdk.zip'
+          $dir = Join-Path $env:RUNNER_TEMP 'asiosdk'
+          Invoke-WebRequest -Uri $url -OutFile $zip -UseBasicParsing
+          $got = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLower()
+          if ($got -ne $sha.ToLower()) { throw "ASIO SDK sha256 mismatch (expected $sha, got $got)" }
+          Expand-Archive $zip -DestinationPath $dir -Force
+          $hdr = Get-ChildItem $dir -Recurse -Filter iasiodrv.h | Select-Object -First 1
+          if (-not $hdr) { throw "iasiodrv.h not found in the ASIO SDK" }
+          $root = Split-Path -Parent (Split-Path -Parent $hdr.FullName)
+          $lic = Join-Path $root 'LICENSE.txt'
+          if (-not (Test-Path $lic)) { throw "ASIO SDK LICENSE.txt not found" }
+          if ((Get-Content $lic -Raw) -notmatch 'General Public License \(GPL\) Version 3') { throw "The ASIO SDK LICENSE.txt no longer offers the GPLv3 option. Stop and re-check LICENSING.md." }
+          "sdk_dir=$root" >> $env:GITHUB_OUTPUT
+          Write-Host "ASIO SDK ok ($sha), used under its GPLv3 option: $root"
+
+      - name: Build Release (ASIO ON, VST2 OFF)
+        env:
+          ASIO_SDK_DIR: ${{ steps.asio.outputs.sdk_dir }}
+        run: |
+          # build.ps1 configures with -DENABLE_ASIO=ON and -DENABLE_VST2=OFF unless told otherwise; no -Vst2Sdk is passed here, ever.
+          ./build.ps1 -Clean -AsioSdk $env:ASIO_SDK_DIR
+          $cache = Get-Content build/CMakeCache.txt
+          if (-not ($cache -match '^ENABLE_ASIO:BOOL=ON')) { throw "ENABLE_ASIO is not ON in CMakeCache.txt" }
+          if (-not ($cache -match '^ENABLE_VST2:BOOL=OFF')) { throw "ENABLE_VST2 is not OFF in CMakeCache.txt" }
+          if (-not (Test-Path build/Ftheband_artefacts/Release/FtheBand.exe)) { throw "FtheBand.exe was not produced" }
+
+      - name: Check exe metadata (product name and version are enforced by SignPath)
+        env:
+          PRODUCT_VERSION: ${{ steps.cfg.outputs.product_version }}
+        run: |
+          $vi = (Get-Item build/Ftheband_artefacts/Release/FtheBand.exe).VersionInfo
+          Write-Host "ProductName=$($vi.ProductName) ProductVersion=$($vi.ProductVersion) FileVersion=$($vi.FileVersion) Company=$($vi.CompanyName)"
+          if ($vi.ProductName -ne 'FtheBand') { throw "ProductName must be 'FtheBand' (got '$($vi.ProductName)')" }
+          if ($vi.ProductVersion -ne $env:PRODUCT_VERSION) { throw "ProductVersion '$($vi.ProductVersion)' does not match CMake project VERSION '$($env:PRODUCT_VERSION)'. Adjust .signpath/artifact-configurations/default.xml if the format is different." }
+
+      # ------------------------------------------------------------------ signing: SignPath Foundation (primary)
+      - name: Upload unsigned exe (input for SignPath)
+        id: upload-unsigned
+        if: steps.cfg.outputs.provider == 'signpath'
+        uses: actions/upload-artifact@v7
+        with:
+          name: FtheBand-exe-unsigned-${{ github.run_id }}-${{ github.run_attempt }}
+          path: build/Ftheband_artefacts/Release/FtheBand.exe
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Sign with SignPath (submit, wait for approval, download)
+        if: steps.cfg.outputs.provider == 'signpath'
+        uses: signpath/github-action-submit-signing-request@v2
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ env.SIGNPATH_PROJECT_SLUG }}
+          signing-policy-slug: ${{ env.SIGNPATH_SIGNING_POLICY_SLUG }}
+          github-artifact-id: ${{ steps.upload-unsigned.outputs.artifact-id }}
+          wait-for-completion: true
+          # SignPath Foundation requires a manual approval for every release; give the approver up to 4 hours.
+          wait-for-completion-timeout-in-seconds: 14400
+          output-artifact-directory: ${{ runner.temp }}\signpath-signed
+          parameters: |
+            productVersion: "${{ steps.cfg.outputs.product_version }}"
+
+      - name: Put the SignPath-signed exe in place
+        if: steps.cfg.outputs.provider == 'signpath'
+        run: |
+          $signed = Join-Path $env:RUNNER_TEMP 'signpath-signed/FtheBand.exe'
+          if (-not (Test-Path $signed)) { throw "SignPath did not return FtheBand.exe" }
+          Copy-Item $signed build/Ftheband_artefacts/Release/FtheBand.exe -Force
+
+      # ------------------------------------------------------------------ signing: Azure Artifact Signing (optional, off by default)
+      - name: Azure login (OIDC)
+        if: steps.cfg.outputs.provider == 'azure'
+        uses: azure/login@v3
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Sign with Azure Artifact Signing (formerly Trusted Signing)
+        if: steps.cfg.outputs.provider == 'azure'
+        uses: azure/artifact-signing-action@v2   # azure/trusted-signing-action was renamed to this and redirects
+        with:
+          endpoint: ${{ vars.AZURE_SIGNING_ENDPOINT }}
+          signing-account-name: ${{ vars.AZURE_SIGNING_ACCOUNT }}
+          certificate-profile-name: ${{ vars.AZURE_CERT_PROFILE }}
+          files-folder: ${{ github.workspace }}\build\Ftheband_artefacts\Release
+          files-folder-filter: exe
+          file-digest: SHA256
+          timestamp-rfc3161: http://timestamp.acs.microsoft.com
+          timestamp-digest: SHA256
+
+      - name: Verify the exe signature
+        id: sig
+        env:
+          PROVIDER: ${{ steps.cfg.outputs.provider }}
+        run: |
+          $exe = 'build/Ftheband_artefacts/Release/FtheBand.exe'
+          $s = Get-AuthenticodeSignature $exe
+          if ($env:PROVIDER -eq 'none') {
+            "state=unsigned" >> $env:GITHUB_OUTPUT
+            Write-Host "Unsigned build (Authenticode status: $($s.Status))"
+          } else {
+            if ($s.Status -ne 'Valid') { throw "Signature check failed: $($s.Status) $($s.StatusMessage)" }
+            if (-not $s.TimeStamperCertificate) { throw "The signature has no timestamp" }
+            "state=signed" >> $env:GITHUB_OUTPUT
+            Write-Host "Signed by: $($s.SignerCertificate.Subject)"
+            Write-Host "Timestamped by: $($s.TimeStamperCertificate.Subject)"
+          }
+
+      # ------------------------------------------------------------------ package (exe is signed BEFORE it is zipped)
+      - name: Package zip (tools/package-win.ps1 -SkipBuild)
+        id: pkg
+        env:
+          VERSION: ${{ steps.cfg.outputs.version }}
+        run: |
+          # No cache on purpose: SignPath's origin verification wants builds that depend only on the repo.
+          # package-win.ps1 sha256-verifies every sample file against catalog/packs.json and FlexASIO 1.10b against its pinned hash.
+          ./tools/package-win.ps1 -Version $env:VERSION -SkipBuild -PackCache (Join-Path $env:RUNNER_TEMP 'pack-cache')
+          $zip = "dist/FtheBand-$($env:VERSION)-win-x64.zip"
+          if (-not (Test-Path $zip)) { throw "$zip was not created" }
+          "zip=$zip" >> $env:GITHUB_OUTPUT
+
+      - name: Verify the zip contents
+        id: verify
+        env:
+          ZIP: ${{ steps.pkg.outputs.zip }}
+          SIG_STATE: ${{ steps.sig.outputs.state }}
+        run: |
+          $tmp = Join-Path $env:RUNNER_TEMP 'zipcheck'
+          if (Test-Path $tmp) { Remove-Item -Recurse -Force $tmp }
+          Expand-Archive $env:ZIP -DestinationPath $tmp
+          foreach ($f in 'FtheBand.exe', 'LICENSE', 'LICENSING.md', 'CREDITS.md', 'THIRD-PARTY-NOTICES.md', 'README.md', 'samples/samples.map', 'samples/CREDITS.txt') {
+            if (-not (Test-Path (Join-Path $tmp $f))) { throw "Missing $f in the zip" }
+          }
+          $catalog = Get-Content catalog/packs.json -Raw | ConvertFrom-Json
+          $packDirs = @(Get-ChildItem (Join-Path $tmp 'samples/packs') -Directory)
+          if (@($catalog).Count -ne 6 -or $packDirs.Count -ne 6) { throw "Expected 6 bundled packs, catalog has $(@($catalog).Count), zip has $($packDirs.Count)" }
+          foreach ($p in $catalog) { if (-not (Test-Path (Join-Path $tmp "samples/packs/$($p.id)/pack.map"))) { throw "Pack $($p.id) is missing" } }
+          # FlexASIO 1.10b must match the hash pinned in package-win.ps1
+          $pin = [regex]::Match((Get-Content tools/package-win.ps1 -Raw), '\$FlexSha\s*=\s*"([0-9a-f]{64})"').Groups[1].Value
+          $flex = Join-Path $tmp 'drivers/FlexASIO/FlexASIO-1.10b.exe'
+          if (-not $pin -or -not (Test-Path $flex)) { throw "FlexASIO 1.10b installer or its pinned hash is missing" }
+          if ((Get-FileHash $flex -Algorithm SHA256).Hash.ToLower() -ne $pin) { throw "FlexASIO sha256 does not match the pinned value" }
+          if (Get-ChildItem $tmp -Recurse -File | Where-Object Name -match 'ASIO4ALL') { throw "ASIO4ALL must not be in the package" }
+          # the exe inside the zip is the one we verified above
+          $s = Get-AuthenticodeSignature (Join-Path $tmp 'FtheBand.exe')
+          if ($env:SIG_STATE -eq 'signed' -and $s.Status -ne 'Valid') { throw "FtheBand.exe inside the zip is not validly signed ($($s.Status))" }
+          $sha = (Get-FileHash $env:ZIP -Algorithm SHA256).Hash.ToLower()
+          "$sha  $(Split-Path -Leaf $env:ZIP)" | Set-Content -Encoding ascii "$env:ZIP.sha256"
+          "sha256=$sha" >> $env:GITHUB_OUTPUT
+          "### FtheBand $($env:SIG_STATE) build" >> $env:GITHUB_STEP_SUMMARY
+          "" >> $env:GITHUB_STEP_SUMMARY
+          "- zip: ``$(Split-Path -Leaf $env:ZIP)``" >> $env:GITHUB_STEP_SUMMARY
+          "- sha256: ``$sha``" >> $env:GITHUB_STEP_SUMMARY
+          "- exe signature: $($s.Status), $($s.SignerCertificate.Subject)" >> $env:GITHUB_STEP_SUMMARY
+          "- packs: $($packDirs.Count), FlexASIO pin ok, ASIO on, VST2 off" >> $env:GITHUB_STEP_SUMMARY
+
+      - name: Upload release zip
+        uses: actions/upload-artifact@v7
+        with:
+          name: FtheBand-${{ steps.cfg.outputs.version }}-win-x64-${{ steps.sig.outputs.state }}
+          path: |
+            ${{ steps.pkg.outputs.zip }}
+            ${{ steps.pkg.outputs.zip }}.sha256
+          if-no-files-found: error
+          retention-days: 30

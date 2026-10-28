@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// Copyright (C) 2026 Ftheband contributors
+// Copyright (C) 2026 FtheBand contributors
 #pragma once
 #include <JuceHeader.h>
 #include "Engine/Sampler.h"
@@ -12,7 +12,8 @@ namespace sj {
     dest is "packs/<id>/[<category>/]file". Every file's sha256 is required and verified; an optional pack-level
     "sha256" (all files concatenated in entry order) is verified too. Packs install into SampleLibrary::userSamplesDir()/<pack id>/ as:
         <files, dest minus "packs/<id>/">, pack.map (dest|note|vel|keytrack|set), pack.json (catalog metadata, for credits)
-    and userSamplesDir()/samples.map is regenerated from every installed pack.map ("<id>/<dest>|note|vel|keytrack|set", set = drums/bass/keys chair). */
+    and userSamplesDir()/samples.map is regenerated from every installed pack.map ("<id>/<dest>|note|vel|keytrack|set", set = drums/bass/keys chair).
+    Bundled packs (the release zip's samples/packs/<id>/ with the same pack.map + pack.json) are read from there instead and count as installed. */
 static constexpr const char* CatalogUrl = "https://raw.githubusercontent.com/thenotagjesus/ftheband/main/catalog/packs.json";
 
 struct PackEntry { juce::String url, dest, sha256; int note = 60, vel = 64; bool keytrack = true; juce::int64 size = 0; };
@@ -32,12 +33,15 @@ namespace SamplePacks {
     std::vector<PackInfo> parseCatalog (const juce::String& json, juce::StringArray& warnings);
     /** Pack category -> sample set feeding a band chair: drums*, perc -> drums; bass -> bass; everything else -> keys. */
     juce::String setForCategory (const juce::String&);
+    /** True when the pack ships with the app (<samples>/packs/<id>/pack.map next to FtheBand.exe). */
+    bool isBundled (const juce::String& id);
+    /** Installed = bundled with the app, or downloaded into the user folder. Bundled packs need no download. */
     bool isInstalled (const juce::String& id);
-    /** Installed packs' metadata (from each pack.json). */
+    /** Installed packs' metadata (from each pack.json): the bundled packs first, then the user's downloads (a user copy of a bundled pack is hidden). */
     std::vector<PackInfo> installed();
     /** Rebuild userSamplesDir()/samples.map from installed packs. Returns the number of lines written. */
     int regenerateMap();
-    /** Credit lines for every installed pack (CC-BY ones are mandatory; CC0 shown as a courtesy). */
+    /** Credit lines for every installed pack, bundled ones included (CC-BY ones are mandatory; CC0 shown as a courtesy). */
     juce::String attributionText();
     juce::String sha256OfFile (const juce::File&);
     juce::String formatSize (juce::int64 bytes);

@@ -1,7 +1,9 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-# Copyright (C) 2026 Session Jam contributors
+# Copyright (C) 2026 FtheBand contributors
 cmake_minimum_required(VERSION 3.22)
-project(SessionJam VERSION 0.1.0 LANGUAGES C CXX)
+project(Ftheband VERSION 0.1.0 LANGUAGES C CXX)
+# Version shown to users (About box, window title, drift.log). CMake VERSION above stays numeric for the Windows resource.
+set(FTHEBAND_DISPLAY_VERSION "0.1.0-beta" CACHE STRING "Human-readable version string")
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
@@ -33,25 +35,27 @@ if(ENABLE_VST2)
 endif()
 
 # Band sample library (CC0 / CC BY, see CREDITS.md), downloaded at configure time from pinned commits.
-option(SESSIONJAM_FETCH_SAMPLES "Download the band sample library at configure time" ON)
-set(SESSIONJAM_SAMPLES_DIR "${CMAKE_CURRENT_SOURCE_DIR}/assets/samples" CACHE PATH "Where the band samples live")
-set(SESSIONJAM_DONATE_URL "" CACHE STRING "Optional donate link shown in the About box (empty = hidden)")
-set(SESSIONJAM_SOURCE_URL "" CACHE STRING "Public source URL shown in the About box (AGPL: point users to the corresponding source)")
-if(SESSIONJAM_FETCH_SAMPLES)
+option(FTHEBAND_FETCH_SAMPLES "Download the band sample library at configure time" ON)
+set(FTHEBAND_SAMPLES_DIR "${CMAKE_CURRENT_SOURCE_DIR}/assets/samples" CACHE PATH "Where the band samples live")
+set(FTHEBAND_DONATE_URL "" CACHE STRING "Optional donate link shown in the About box (empty = hidden)")
+set(FTHEBAND_SOURCE_URL "" CACHE STRING "Public source URL shown in the About box (AGPL: point users to the corresponding source)")
+if(FTHEBAND_FETCH_SAMPLES)
     execute_process(COMMAND ${CMAKE_COMMAND} -DMANIFEST=${CMAKE_CURRENT_SOURCE_DIR}/assets/samples.manifest
-        -DSAMPLES_DIR=${SESSIONJAM_SAMPLES_DIR} -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/FetchSamples.cmake RESULT_VARIABLE fetch_rc)
+        -DSAMPLES_DIR=${FTHEBAND_SAMPLES_DIR} -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/FetchSamples.cmake RESULT_VARIABLE fetch_rc)
     if(NOT fetch_rc EQUAL 0)
         message(WARNING "Sample download failed; the band falls back to synth voices")
     endif()
 endif()
 
-juce_add_gui_app(SessionJam
-    PRODUCT_NAME "Session Jam"
-    COMPANY_NAME "SessionJam"
+juce_add_gui_app(Ftheband
+    PRODUCT_NAME "FtheBand"
+    COMPANY_NAME "FtheBand"
+    COMPANY_COPYRIGHT "Copyright (C) 2026 FtheBand contributors. AGPL-3.0-only."
+    BUNDLE_ID "com.ftheband.app"
     VERSION 0.1.0)
-juce_generate_juce_header(SessionJam)
+juce_generate_juce_header(Ftheband)
 
-target_sources(SessionJam PRIVATE
+target_sources(Ftheband PRIVATE
     Source/Main.cpp
     Source/MainComponent.cpp
     Source/Engine/AudioEngine.cpp
@@ -60,45 +64,46 @@ target_sources(SessionJam PRIVATE
     Source/Net/SamplePacks.cpp
     Source/Recording/StemRecorder.cpp
     Source/Cli/Cli.cpp)
-target_include_directories(SessionJam PRIVATE Source)
+target_include_directories(Ftheband PRIVATE Source)
 
-target_compile_definitions(SessionJam PRIVATE
+target_compile_definitions(Ftheband PRIVATE
     JUCE_WEB_BROWSER=0
-    JUCE_APPLICATION_NAME_STRING="$<TARGET_PROPERTY:SessionJam,JUCE_PRODUCT_NAME>"
-    JUCE_APPLICATION_VERSION_STRING="$<TARGET_PROPERTY:SessionJam,JUCE_VERSION>"
+    JUCE_APPLICATION_NAME_STRING="$<TARGET_PROPERTY:Ftheband,JUCE_PRODUCT_NAME>"
+    JUCE_APPLICATION_VERSION_STRING="$<TARGET_PROPERTY:Ftheband,JUCE_VERSION>"
+    FTHEBAND_DISPLAY_VERSION="${FTHEBAND_DISPLAY_VERSION}"
     JUCE_PLUGINHOST_VST3=1
     JUCE_PLUGINHOST_AU=0
     JUCE_PLUGINHOST_LADSPA=0
-    SESSIONJAM_SAMPLES_DIR="${SESSIONJAM_SAMPLES_DIR}"
-    SESSIONJAM_DONATE_URL="${SESSIONJAM_DONATE_URL}"
-    SESSIONJAM_SOURCE_URL="${SESSIONJAM_SOURCE_URL}")
+    FTHEBAND_SAMPLES_DIR="${FTHEBAND_SAMPLES_DIR}"
+    FTHEBAND_DONATE_URL="${FTHEBAND_DONATE_URL}"
+    FTHEBAND_SOURCE_URL="${FTHEBAND_SOURCE_URL}")
 
 # Platform audio backends: only enable what exists on each OS (JACK/ALSA headers are Linux-only).
 if(WIN32)
-    target_compile_definitions(SessionJam PRIVATE JUCE_WASAPI=1 JUCE_DIRECTSOUND=1)
+    target_compile_definitions(Ftheband PRIVATE JUCE_WASAPI=1 JUCE_DIRECTSOUND=1)
 elseif(UNIX AND NOT APPLE)
-    target_compile_definitions(SessionJam PRIVATE JUCE_ALSA=1 JUCE_JACK=1)
+    target_compile_definitions(Ftheband PRIVATE JUCE_ALSA=1 JUCE_JACK=1)
 endif()
 # juce::URL needs libcurl on Linux for "Get more sounds" (Windows uses WinINet, macOS NSURLSession).
 if(UNIX AND NOT APPLE)
     find_package(CURL)
     if(CURL_FOUND)
-        target_compile_definitions(SessionJam PRIVATE JUCE_USE_CURL=1)
-        target_link_libraries(SessionJam PRIVATE CURL::libcurl)
+        target_compile_definitions(Ftheband PRIVATE JUCE_USE_CURL=1)
+        target_link_libraries(Ftheband PRIVATE CURL::libcurl)
     else()
-        target_compile_definitions(SessionJam PRIVATE JUCE_USE_CURL=0)
+        target_compile_definitions(Ftheband PRIVATE JUCE_USE_CURL=0)
         message(WARNING "libcurl not found: 'Get more sounds' will report the catalog as unreachable on this build")
     endif()
 else()
-    target_compile_definitions(SessionJam PRIVATE JUCE_USE_CURL=0)
+    target_compile_definitions(Ftheband PRIVATE JUCE_USE_CURL=0)
 endif()
 
 if(ENABLE_VST2)
-    target_compile_definitions(SessionJam PRIVATE JUCE_PLUGINHOST_VST=1)
-    target_link_libraries(SessionJam PRIVATE juce_vst2_sdk)
+    target_compile_definitions(Ftheband PRIVATE JUCE_PLUGINHOST_VST=1)
+    target_link_libraries(Ftheband PRIVATE juce_vst2_sdk)
     message(STATUS "VST2/VST1 hosting enabled, SDK: ${VST2_SDK_DIR}")
 else()
-    target_compile_definitions(SessionJam PRIVATE JUCE_PLUGINHOST_VST=0)
+    target_compile_definitions(Ftheband PRIVATE JUCE_PLUGINHOST_VST=0)
 endif()
 
 if(ENABLE_ASIO)
@@ -118,23 +123,23 @@ if(ENABLE_ASIO)
         message(FATAL_ERROR "ASIO SDK not found at ${ASIO_SDK_DIR} (missing common/iasiodrv.h)")
     endif()
     message(STATUS "ASIO enabled, SDK: ${ASIO_SDK_DIR}")
-    target_compile_definitions(SessionJam PRIVATE JUCE_ASIO=1)
-    target_include_directories(SessionJam PRIVATE "${ASIO_SDK_DIR}/common")
+    target_compile_definitions(Ftheband PRIVATE JUCE_ASIO=1)
+    target_include_directories(Ftheband PRIVATE "${ASIO_SDK_DIR}/common")
 else()
-    target_compile_definitions(SessionJam PRIVATE JUCE_ASIO=0)
+    target_compile_definitions(Ftheband PRIVATE JUCE_ASIO=0)
 endif()
 
-target_link_libraries(SessionJam PRIVATE
+target_link_libraries(Ftheband PRIVATE
     juce::juce_audio_utils juce::juce_audio_processors juce::juce_audio_devices juce::juce_audio_formats
     juce::juce_audio_basics juce::juce_dsp juce::juce_gui_extra juce::juce_cryptography
     PUBLIC juce::juce_recommended_config_flags juce::juce_recommended_warning_flags)
 
 # Headless tools: --eval, --analyze, --render-demo, --jam (same code as the GUI's CLI mode)
-juce_add_console_app(SessionJamCli PRODUCT_NAME "SessionJamCli")
-juce_generate_juce_header(SessionJamCli)
-target_sources(SessionJamCli PRIVATE Source/Cli/CliMain.cpp Source/Cli/Cli.cpp)
-target_include_directories(SessionJamCli PRIVATE Source)
-target_compile_definitions(SessionJamCli PRIVATE JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0 JUCE_USE_FLAC=1 JUCE_USE_MP3AUDIOFORMAT=0
-    SESSIONJAM_SAMPLES_DIR="${SESSIONJAM_SAMPLES_DIR}")
-target_link_libraries(SessionJamCli PRIVATE juce::juce_audio_formats juce::juce_audio_basics juce::juce_dsp juce::juce_events juce::juce_gui_basics
+juce_add_console_app(FthebandCli PRODUCT_NAME "FtheBandCli")
+juce_generate_juce_header(FthebandCli)
+target_sources(FthebandCli PRIVATE Source/Cli/CliMain.cpp Source/Cli/Cli.cpp)
+target_include_directories(FthebandCli PRIVATE Source)
+target_compile_definitions(FthebandCli PRIVATE JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0 JUCE_USE_FLAC=1 JUCE_USE_MP3AUDIOFORMAT=0
+    FTHEBAND_SAMPLES_DIR="${FTHEBAND_SAMPLES_DIR}")
+target_link_libraries(FthebandCli PRIVATE juce::juce_audio_formats juce::juce_audio_basics juce::juce_dsp juce::juce_events juce::juce_gui_basics
     PUBLIC juce::juce_recommended_config_flags)

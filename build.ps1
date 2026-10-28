@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-# Copyright (C) 2026 Session Jam contributors
+# Copyright (C) 2026 FtheBand contributors
 # Release build on Windows with VS Build Tools 2022 + Ninja. Logs to build.log.
 # ASIO is ON by default (SDK auto-fetched). Usage: .\build.ps1 [-NoAsio] [-AsioSdk C:\path\to\asiosdk] [-Vst2Sdk C:\path\to\vst2sdk] [-Clean]
 param([switch]$NoAsio, [string]$AsioSdk = "", [string]$Vst2Sdk = "", [switch]$Clean)
@@ -20,4 +20,4 @@ if ($Vst2Sdk) { $cfg += "-DENABLE_VST2=ON"; $cfg += "-DVST2_SDK_DIR=$Vst2Sdk" } 
 if ($LASTEXITCODE -ne 0) { throw "CMake configure failed - see build.log" }
 & cmake --build $bld --config Release 2>&1 | Tee-Object -FilePath $log -Append
 if ($LASTEXITCODE -ne 0) { throw "Build failed - see build.log" }
-Write-Host "OK: $bld\SessionJam_artefacts\Release\Session Jam.exe"
+Write-Host "OK: $bld\Ftheband_artefacts\Release\FtheBand.exe"

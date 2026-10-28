@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// Copyright (C) 2026 Session Jam contributors
+// Copyright (C) 2026 FtheBand contributors
 #pragma once
 #include <JuceHeader.h>
 #include <random>
@@ -102,28 +102,49 @@ private:
     }
 };
 
-/** Loads samples.map (dest|note|vel|keytrack[|set]) from the first existing bundled samples folder, then merges the
-    per-user downloaded packs (userSamplesDir()/samples.map, paths "<pack>/drums/x.wav" relative to that folder).
-    The bundled set loads first and on its own, so a missing or broken user map never costs the built-in sounds.
+/** Loads the sounds in three layers, each on its own so a missing or broken layer never costs the others:
+      1. the bundled base set: <samples>/samples.map (dest|note|vel|keytrack[|set]);
+      2. the bundled catalog packs shipped with the app: <samples>/packs/<id>/pack.map (+ pack.json for credits), exactly the
+         layout a downloaded pack has under userSamplesDir(), so no download is needed on first run;
+      3. the per-user downloaded packs (userSamplesDir()/samples.map, paths "<pack>/drums/x.wav" relative to that folder).
+         A user copy of a pack that is also bundled is skipped (never loaded twice).
+    <samples> is the first search path that has a samples.map or a packs folder: $FTHEBAND_SAMPLES, then "samples" next to
+    FtheBand.exe (what the release zip ships), then its parent folder, then the build-time default.
     load() does file I/O only (no shared state): safe to run on a background thread, then hand the finished
     library to AudioEngine::installLibrary() on the message thread. */
 struct SampleLibrary {
-    ZoneSet drums, bass, keys; juce::File folder; int loaded = 0, loadedUser = 0;
+    ZoneSet drums, bass, keys; juce::File folder; int loaded = 0, loadedUser = 0, loadedBase = 0, loadedBundledPacks = 0;
+    juce::StringArray bundledPackIds;
     /** Per-user download root: <userApplicationData>/Ftheband/samples (one sub-folder per pack). */
     static juce::File userSamplesDir() {
         return juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory).getChildFile ("Ftheband").getChildFile ("samples");
     }
     static juce::Array<juce::File> searchPaths() {
         juce::Array<juce::File> p;
-        auto env = juce::SystemStats::getEnvironmentVariable ("SESSIONJAM_SAMPLES", {});
+        auto env = juce::SystemStats::getEnvironmentVariable ("FTHEBAND_SAMPLES", {});
+        if (env.isEmpty()) env = juce::SystemStats::getEnvironmentVariable ("SESSIONJAM_SAMPLES", {});   // legacy name
         if (env.isNotEmpty()) p.add (juce::File (env));
         auto exeDir = juce::File::getSpecialLocation (juce::File::currentExecutableFile).getParentDirectory();
         p.add (exeDir.getChildFile ("samples"));
         p.add (exeDir.getParentDirectory().getChildFile ("samples"));
-       #ifdef SESSIONJAM_SAMPLES_DIR
-        p.add (juce::File (SESSIONJAM_SAMPLES_DIR));
+       #ifdef FTHEBAND_SAMPLES_DIR
+        p.add (juce::File (FTHEBAND_SAMPLES_DIR));
        #endif
         return p;
+    }
+    /** The bundled samples folder (see above), or an empty File when there is none. */
+    static juce::File bundledRoot() {
+        for (auto& f : searchPaths()) if (f.getChildFile ("samples.map").existsAsFile() || f.getChildFile ("packs").isDirectory()) return f;
+        return {};
+    }
+    /** Ids of the catalog packs shipped in <samples>/packs (a folder with a pack.map). Sorted. */
+    static juce::StringArray bundledPackIdList() {
+        juce::StringArray ids; auto root = bundledRoot();
+        if (root == juce::File()) return ids;
+        for (auto& d : root.getChildFile ("packs").findChildFiles (juce::File::findDirectories, false))
+            if (d.getChildFile ("pack.map").existsAsFile()) ids.add (d.getFileName());
+        ids.sort (true);
+        return ids;
     }
     /** "drums/x.wav" or "<pack>/drums/x.wav" -> its ZoneSet (default keys). */
     ZoneSet& setFor (const juce::String& rel) {
@@ -135,12 +156,15 @@ struct SampleLibrary {
         }
         return keys;
     }
-    int loadMap (const juce::File& dir, juce::AudioFormatManager& fm) {
+    /** One map line = dest|note|vel|keytrack[|set]; the file is dir/<prefix><dest>. Lines of skipIds' packs are ignored. */
+    int loadLines (const juce::File& dir, const juce::StringArray& lines, const juce::String& prefix, juce::AudioFormatManager& fm,
+                   const juce::StringArray& skipIds = {}) {
         int n = 0;
-        juce::StringArray lines; dir.getChildFile ("samples.map").readLines (lines);
         for (auto& l : lines) {
             auto t = juce::StringArray::fromTokens (l, "|", ""); if (t.size() < 4 || l.startsWith ("#")) continue;
-            auto file = dir.getChildFile (t[0]);
+            const auto rel = prefix + t[0];
+            if (skipIds.size() > 0 && skipIds.contains (rel.replaceCharacter ('\\', '/').upToFirstOccurrenceOf ("/", false, false))) continue;
+            auto file = dir.getChildFile (rel);
             if (! file.isAChildOf (dir)) continue;   // no "../" escapes from a downloaded map
             std::unique_ptr<juce::AudioFormatReader> r (fm.createReaderFor (file));
             if (r == nullptr || r->lengthInSamples <= 1) continue;
@@ -156,17 +180,30 @@ struct SampleLibrary {
             s0 = juce::jmax (0, s0 - 16);
             if (s0 > 0) { juce::AudioBuffer<float> b (1, len + 1 - s0); b.copyFrom (0, 0, z->data, 0, s0, len + 1 - s0); z->data = std::move (b); }
             auto& dst = t.size() >= 5 && t[4] == "drums" ? drums : t.size() >= 5 && t[4] == "bass" ? bass
-                      : t.size() >= 5 && t[4] == "keys" ? keys : setFor (t[0]);   // 5th field = chair set (user packs)
+                      : t.size() >= 5 && t[4] == "keys" ? keys : setFor (rel);   // 5th field = chair set (packs)
             dst.zones.push_back (std::move (z)); ++n;
         }
         return n;
     }
+    int loadMap (const juce::File& dir, juce::AudioFormatManager& fm, const juce::StringArray& skipIds = {}) {
+        juce::StringArray lines; dir.getChildFile ("samples.map").readLines (lines);
+        return loadLines (dir, lines, {}, fm, skipIds);
+    }
     bool load (bool includeUserPacks = true) {
-        for (auto& f : searchPaths()) if (f.getChildFile ("samples.map").existsAsFile()) { folder = f; break; }
         juce::AudioFormatManager fm; fm.registerBasicFormats();
-        if (folder != juce::File()) loaded += loadMap (folder, fm);
+        folder = bundledRoot();
+        if (folder != juce::File()) {
+            if (folder.getChildFile ("samples.map").existsAsFile()) loadedBase = loadMap (folder, fm);
+            const auto packsDir = folder.getChildFile ("packs");
+            for (auto& id : bundledPackIdList()) {   // sorted: the same order on every run
+                juce::StringArray lines; packsDir.getChildFile (id).getChildFile ("pack.map").readLines (lines);
+                bundledPackIds.add (id);
+                loadedBundledPacks += loadLines (packsDir, lines, id + "/", fm);
+            }
+            loaded += loadedBase + loadedBundledPacks;
+        }
         if (includeUserPacks && userSamplesDir().getChildFile ("samples.map").existsAsFile()) {
-            loadedUser = loadMap (userSamplesDir(), fm); loaded += loadedUser;
+            loadedUser = loadMap (userSamplesDir(), fm, bundledPackIds); loaded += loadedUser;
         }
         for (auto* s : { &drums, &bass, &keys }) s->finalise();
         return loaded > 0;

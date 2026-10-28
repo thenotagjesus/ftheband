@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// Copyright (C) 2026 Session Jam contributors
+// Copyright (C) 2026 FtheBand contributors
 #pragma once
 #include <JuceHeader.h>
 #include "Engine/AudioEngine.h"
 #include "Engine/SplitInput.h"
+#include "Engine/DevicePolicy.h"
 #include "UI/PluginUI.h"
 
 /** Main window content. Layout is designed for 1280x720 logical pixels (= 3840x2160 at 300 % scaling) and every tab
@@ -53,6 +54,13 @@ private:
     bool openMicInput (const juce::String& inName);
     void closeMicInput();
     juce::StringArray micCandidates() const;
+    // built-in low latency (WASAPI exclusive / IAudioClient3 + split input): our own "ASIO alternative", no driver needed
+    bool isBuiltInLowLatency() const;
+    juce::String setBuiltInLowLatency (bool on);   // Audio tab toggle; returns a one-line result
+    void startBufferTuning (const juce::Array<int>& ladder);
+    void tuneTick();
+    static juce::File flexAsioInstaller();         // drivers/FlexASIO/FlexASIO-*.exe next to the exe, or {}
+    bool tuneActive = false; int64_t tuneStart = 0; int tuneBase = -1; juce::Array<int> tuneLadder;
     // latency: push the current path estimates into the engine (PDC + follower), readout text
     void updateLatency (bool force = false);
     juce::String latencyText (bool shortForm) const;

@@ -1,4 +1,4 @@
-# Session Jam — Design
+# FtheBand — Design
 
 A JUCE 8 (C++17) desktop app in the spirit of Rocksmith's Session Mode. You play (Bass VI by default; guitar or bass
 also work) and a sampled band of up to 8 chairs follows your chords, tempo and intensity. Every bus can be recorded
@@ -72,21 +72,21 @@ never act on a previous session's data. When the tracker reports a **locked** te
 ## 7. UI
 - **Size:** 1280x720 logical pixels, which is 3840x2160 at 300 % (4K). Global scale is `uiScale` from session.xml, or automatic (0.5–1.0 for smaller screens).
 - **Tabs:** Jam, Band, Inserts, Audio, About. Each is a viewport with a minimum size, so a small window scrolls instead of clipping.
-- **About tab:** version, AGPL notice and link, the CC BY attribution, an optional source URL (`SESSIONJAM_SOURCE_URL`), and a **Donate** link that
+- **About tab:** version, AGPL notice and link, the CC BY attribution, an optional source URL (`FTHEBAND_SOURCE_URL`), and a **Donate** link that
   appears only when `donateUrl` is set in session.xml. It is empty by default.
 - **`--screens <dir>`:** renders every tab at 1280x720, 1280x720@3x (Jam), 1920x1080 and 960x600, with preview data.
 
 ## 8. session.xml
 `<Session instrument tuning cents strangle muteBassChair bassGiveWay style fallbackBpm monitor inputGain masterGain uiScale donateUrl>`
 with these children: `<Chairs><Chair type role gain mute solo/>…</Chairs>`, `<DEVICESETUP/>`, and `<PluginChain>`. It lives in the user app-data
-folder under `SessionJam/`.
+folder under `Ftheband/`.
 
 ## 9. Verification (all offline)
 | Check | Command | Latest result |
 |---|---|---|
-| Chord follow on synthesised guitar, 1134 changes | `SessionJamCli --eval` | 85.8 % maj/min, 86.7 % root, median latency 1.23 beats (`eval/eval-summary.txt`) |
-| Quick eval incl. Bass VI (+ strangle) | `SJ_QUICK=1 SessionJamCli --eval eval/eval-quick.csv` | maj/min 78.2 % overall: standard 86.6 %, Bass VI 69.2 %, Bass VI strangled 66.0 %; on the user take with a 150 Hz high-pass, the strangle path agrees 73 % with the unfiltered take (the guitar profile agrees 2.6 %) (`eval/eval-quick-summary.txt`) |
-| Real engine, real take, block 480 and 2048 | `"Session Jam" --engine-test` | 0 analysis drops, 0 recorder drops, 5 stems of identical length, tempo lock 101.5 BPM (CLI estimate 100.2), F minor |
+| Chord follow on synthesised guitar, 1134 changes | `FtheBandCli --eval` | 85.8 % maj/min, 86.7 % root, median latency 1.23 beats (`eval/eval-summary.txt`) |
+| Quick eval incl. Bass VI (+ strangle) | `SJ_QUICK=1 FtheBandCli --eval eval/eval-quick.csv` | maj/min 78.2 % overall: standard 86.6 %, Bass VI 69.2 %, Bass VI strangled 66.0 %; on the user take with a 150 Hz high-pass, the strangle path agrees 73 % with the unfiltered take (the guitar profile agrees 2.6 %) (`eval/eval-quick-summary.txt`) |
+| Real engine, real take, block 480 and 2048 | `"FtheBand" --engine-test` | 0 analysis drops, 0 recorder drops, 5 stems of identical length, tempo lock 101.5 BPM (CLI estimate 100.2), F minor |
 | Mix sanity on the demos and the user-take jam | `tools/check_mix.py` | 0 clicks; drums 88–97 % within 20 ms of the grid (median 1.6–2.4 ms); bass fits the sounding chord in 94.7–100 % of notes |
 | Band chord accuracy vs truth | `tools/follow_check.py` | see `demos/*.log.txt` |
 
@@ -97,4 +97,4 @@ it raises the gate (−52.8 dBFS against −60.5 when only silence is learned).
 ## Split input / drift (Aura 01)
 `SplitInput` (WASAPI input-only, own thread) → `DriftResampler` (SPSC ring, PI on phase-corrected fill,
 ωn=2π·0.02, ζ=1, I term clamped ±500 ppm, 6-pt Lagrange, WSOLA-aligned crossfaded jumps on low/high water,
-fade-out/fade-in on input stall) → `AudioEngine` output callback. `SessionJamCli --drift-test` simulates it offline.
+fade-out/fade-in on input stall) → `AudioEngine` output callback. `FtheBandCli --drift-test` simulates it offline.

@@ -1,13 +1,19 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// Copyright (C) 2026 Session Jam contributors
+// Copyright (C) 2026 FtheBand contributors
 #include <JuceHeader.h>
 #include "MainComponent.h"
 #include "Util/ProcStats.h"
+#include "Util/Migration.h"
+#include "Cli/AudioProbe.h"
 
-class SessionJamApp : public juce::JUCEApplication {
+#ifndef FTHEBAND_DISPLAY_VERSION
+ #define FTHEBAND_DISPLAY_VERSION "0.1.0-beta"
+#endif
+
+class FthebandApp : public juce::JUCEApplication {
 public:
     const juce::String getApplicationName() override { return JUCE_APPLICATION_NAME_STRING; }
-    const juce::String getApplicationVersion() override { return JUCE_APPLICATION_VERSION_STRING; }
+    const juce::String getApplicationVersion() override { return FTHEBAND_DISPLAY_VERSION; }
     bool moreThanOneInstanceAllowed() override { return true; }
     void initialise (const juce::String&) override {
         auto args = getCommandLineParameterArray();
@@ -18,10 +24,14 @@ public:
             for (auto& f : mc.renderScreens (dir)) std::cout << f << std::endl;
             setApplicationReturnValue (0); quit(); return;
         }
+        const int pi = args.indexOf ("--audio-probe");
+        if (pi >= 0) { setApplicationReturnValue (sj::probe::run (args, pi)); quit(); return; }
+        if (args.contains ("--samples-info")) { setApplicationReturnValue (sj::probe::samplesInfo (args)); quit(); return; }
         const int ei = args.indexOf ("--engine-test");
         if (ei >= 0) { setApplicationReturnValue (engineTest (args[ei + 1], args[ei + 2], args[ei + 3].getIntValue())); quit(); return; }
         const int ki = args.indexOf ("--soak");
         if (ki >= 0) { setApplicationReturnValue (soakTest (args[ki + 1].getDoubleValue(), args[ki + 2], args[ki + 3].getIntValue(), args[ki + 4].getDoubleValue())); quit(); return; }
+        sj::migrateLegacyUserData();   // one-time: copy settings/session/log from the old SessionJam folder
         window.reset (new Window());
     }
     /** Live-engine smoke test: stream a WAV through AudioEngine's real callback (threads, FIFO, triple buffers, recorder)
@@ -110,7 +120,7 @@ public:
     void systemRequestedQuit() override { quit(); }
 private:
     struct Window : juce::DocumentWindow {
-        Window() : DocumentWindow ("Session Jam", juce::Colour (0xff15171c), allButtons) {
+        Window() : DocumentWindow (juce::String ("FtheBand ") + FTHEBAND_DISPLAY_VERSION, juce::Colour (0xff15171c), allButtons) {
             setUsingNativeTitleBar (true);
             auto* mc = new MainComponent();
             // Logical 1280x720 (3840x2160 at 300 % OS scaling). Only shrink when the screen can't hold it.
@@ -126,4 +136,4 @@ private:
     };
     std::unique_ptr<Window> window;
 };
-START_JUCE_APPLICATION (SessionJamApp)
+START_JUCE_APPLICATION (FthebandApp)

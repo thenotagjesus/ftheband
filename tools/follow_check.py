@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: AGPL-3.0-only
-# Copyright (C) 2026 Session Jam contributors
+# Copyright (C) 2026 FtheBand contributors
 """Objective follow check: band chord log vs the played truth of a --render-demo."""
 import re, sys
 NOTES = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B']

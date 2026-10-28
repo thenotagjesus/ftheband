@@ -7,3 +7,4 @@ assets/samples/
 user-takes/
 tools/__pycache__/
 *.zip
+dist/

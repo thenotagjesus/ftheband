@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// Copyright (C) 2026 Session Jam contributors
+// Copyright (C) 2026 FtheBand contributors
 #pragma once
 #include <JuceHeader.h>
 #include "Engine/PluginChain.h"
 
 namespace sj {
-/** Owns persistent plugin-scanner state in AppData/SessionJam: plugins.xml (KnownPluginList),
+/** Owns persistent plugin-scanner state in AppData/Ftheband: plugins.xml (KnownPluginList),
     scanner.settings (user-added search folders, via PluginListComponent), and a crash "dead man's pedal". */
 class PluginLibrary : private juce::ChangeListener {
 public:

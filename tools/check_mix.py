@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: AGPL-3.0-only
-# Copyright (C) 2026 Session Jam contributors
+# Copyright (C) 2026 FtheBand contributors
 """Objective checks on a rendered jam (no listening needed).
 
   check_mix.py <mix.wav> <stems_dir> <log.txt> [--key "F minor"]

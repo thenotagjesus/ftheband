@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  SPDX-License-Identifier: AGPL-3.0-only
+  SignPath artifact configuration for FtheBand. Import it as the DEFAULT artifact configuration of the SignPath project "ftheband"
+  (or paste it into the web editor). The GitHub Action uploads a ZIP (actions/upload-artifact) that contains only FtheBand.exe,
+  so the root element is <zip-file>. SignPath Foundation requires the product name/version metadata to be enforced:
+  the version is passed by .github/workflows/release.yml as the parameter "productVersion" (CMake project VERSION, e.g. 0.1.0).
+  The FlexASIO installer and the sample packs are NOT signed here: they are upstream files and are added to the zip after signing.
+-->
+<artifact-configuration xmlns="http://signpath.io/artifact-configuration/v1">
+  <parameters>
+    <parameter name="productVersion" required="true" />
+  </parameters>
+  <zip-file>
+    <pe-file path="FtheBand.exe" product-name="FtheBand" product-version="${productVersion}">
+      <authenticode-sign />
+    </pe-file>
+  </zip-file>
+</artifact-configuration>

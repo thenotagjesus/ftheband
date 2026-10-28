@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-# Copyright (C) 2026 Session Jam contributors
+# Copyright (C) 2026 FtheBand contributors
 # Downloads the sample library listed in assets/samples.manifest into SAMPLES_DIR.
 # Usage: cmake -DMANIFEST=... -DSAMPLES_DIR=... -P cmake/FetchSamples.cmake
 # Idempotent: existing non-empty files are skipped. Writes SAMPLES_DIR/samples.map (dest|note|vel|keytrack).
