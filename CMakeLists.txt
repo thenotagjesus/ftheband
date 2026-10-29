@@ -42,7 +42,19 @@ endif()
 option(FTHEBAND_FETCH_SAMPLES "Download the band sample library at configure time" ON)
 set(FTHEBAND_SAMPLES_DIR "${CMAKE_CURRENT_SOURCE_DIR}/assets/samples" CACHE PATH "Where the band samples live")
 set(FTHEBAND_DONATE_URL "" CACHE STRING "Optional donate link shown in the About box (empty = hidden)")
-set(FTHEBAND_SOURCE_URL "" CACHE STRING "Public source URL shown in the About box (AGPL: point users to the corresponding source)")
+set(FTHEBAND_SOURCE_URL "https://github.com/thenotagjesus/ftheband" CACHE STRING "Public source URL shown in the About box (AGPL: point users to the corresponding source)")
+# Commit this binary is built from (shown in the About box and used for SOURCE.txt). Pass -DFTHEBAND_COMMIT=<hash> when building from a source archive without .git.
+set(FTHEBAND_COMMIT "" CACHE STRING "Git commit of the source this build comes from")
+if(NOT FTHEBAND_COMMIT)
+    find_package(Git QUIET)
+    if(GIT_FOUND)
+        execute_process(COMMAND "${GIT_EXECUTABLE}" rev-parse --short=12 HEAD WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+                        OUTPUT_VARIABLE FTHEBAND_COMMIT OUTPUT_STRIP_TRAILING_WHITESPACE ERROR_QUIET RESULT_VARIABLE _ftb_git_rc)
+        if(NOT _ftb_git_rc EQUAL 0)
+            set(FTHEBAND_COMMIT "")
+        endif()
+    endif()
+endif()
 if(FTHEBAND_FETCH_SAMPLES)
     execute_process(COMMAND ${CMAKE_COMMAND} -DMANIFEST=${CMAKE_CURRENT_SOURCE_DIR}/assets/samples.manifest
         -DSAMPLES_DIR=${FTHEBAND_SAMPLES_DIR} -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/FetchSamples.cmake RESULT_VARIABLE fetch_rc)
@@ -82,7 +94,8 @@ target_compile_definitions(Ftheband PRIVATE
     JUCE_PLUGINHOST_LADSPA=0
     FTHEBAND_SAMPLES_DIR="${FTHEBAND_SAMPLES_DIR}"
     FTHEBAND_DONATE_URL="${FTHEBAND_DONATE_URL}"
-    FTHEBAND_SOURCE_URL="${FTHEBAND_SOURCE_URL}")
+    FTHEBAND_SOURCE_URL="${FTHEBAND_SOURCE_URL}"
+    FTHEBAND_COMMIT="${FTHEBAND_COMMIT}")
 
 # Platform audio backends: only enable what exists on each OS (JACK/ALSA headers are Linux-only).
 if(WIN32)

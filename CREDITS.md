@@ -37,6 +37,15 @@ Checked 2026-10-26 against each upstream LICENSE/README at the pinned commit. Ev
 | `vcsl-hand-percussion` (perc) | VCSL Hand Percussion (tambourine, shaker, cowbell, claves, congas, bongos) | **CC0-1.0** | README.md line 6: "This collection is under a Creative Commons 0 license. ... (even make commercial software), no royalties, no credit, no special terms." (LICENSE line 3: "CC0 1.0 Universal") – [README.md](https://raw.githubusercontent.com/sgossner/VCSL/c1ea7bcc3c7309650ab0da9d15c9cd1fbc4a4c7e/README.md) | https://github.com/sgossner/VCSL/tree/c1ea7bcc3c7309650ab0da9d15c9cd1fbc4a4c7e |
 | `osiris-piano` (keys) | Osiris Piano (upright, mic A) | **CC0-1.0** | LICENSE line 3: "CC0 1.0 Universal" – [LICENSE](https://raw.githubusercontent.com/sfzinstruments/Osiris_Piano/18c6afccb60cff458edbf7c394571783e074e1e9/LICENSE) | https://github.com/sfzinstruments/Osiris_Piano/tree/18c6afccb60cff458edbf7c394571783e074e1e9 |
 
+### Wurlitzer EP200 samples (CC BY 3.0): full credit
+- **Title:** Wurlitzer EP200 Electric Piano v1.1 (16-May-1999), part of "Greg Sullivan's E-Pianos"
+- **Author:** Greg Sullivan, http://www.sullivang.net/ (shared "with the author permission with the request for attribution")
+- **SFZ mapping and FLAC conversion:** kinwie
+- **Source:** https://github.com/sfzinstruments/GregSullivan.E-Pianos (commit `8c3e581acda3594b553948ff0222d4f84a698376`, folder `Wurlitzer EP200/Samples`)
+- **Licence:** Creative Commons Attribution 3.0 Unported, https://creativecommons.org/licenses/by/3.0/ (the repository README's "License" section; the repository has no separate licence file)
+- **Changes:** the FLAC files are downloaded from the source above without modification and are mapped by note and velocity (`assets/samples.manifest`); FtheBand resamples and re-pitches them on playback. The About tab and this file carry the credit.
+- **No endorsement:** the author does not endorse FtheBand.
+
 ### Credit lines to ship (About box / download page)
 - Big Rusty Drums by Karoryfer Samples (CC0 1.0).
 - Pipe Organ sampled by Simon Dalzell (Ivy Audio), VCSL by Versilian Studios LLC (CC0 1.0).
@@ -49,4 +58,4 @@ Subsets: Big Rusty Drums uses the close mics only (kick, snare centre+side stick
 
 ## Bundled in the release zip
 Release zips made with `tools\package-win.ps1` include all six packs above under `samples\packs\<id>\` (files verified against the SHA-256 in `catalog/packs.json`, with a `CREDIT.txt` per pack and `samples\CREDITS.txt`) plus the base set listed at the top of this file under `samples\`. The app loads them straight from the folder next to `FtheBand.exe`, lists them as "installed, bundled" in *Get more sounds*, and includes their credit lines in the About tab.
-The zip also carries the optional **FlexASIO 1.10b** installer (MIT, https://github.com/dechamps/FlexASIO) in `drivers\FlexASIO\`; its licence and its libraries' licences are in `THIRD-PARTY-NOTICES.md`. ASIO4ALL is not bundled.
+The zip carries **no** drivers or installers. FlexASIO 1.10b (MIT, https://github.com/dechamps/FlexASIO) is an optional download that FtheBand makes only after the user confirms, from the official GitHub release (https://github.com/dechamps/FlexASIO/releases/tag/flexasio-1.10b); it is not bundled. Its licence and its libraries' licences are in `THIRD-PARTY-NOTICES.md`. ASIO4ALL is not bundled or downloaded (FtheBand only opens https://asio4all.org).

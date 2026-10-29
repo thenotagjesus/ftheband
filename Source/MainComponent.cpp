@@ -13,6 +13,12 @@ using namespace sj;
 #ifndef FTHEBAND_DONATE_URL
  #define FTHEBAND_DONATE_URL ""
 #endif
+#ifndef FTHEBAND_DISPLAY_VERSION
+ #define FTHEBAND_DISPLAY_VERSION "0.1.0-beta"
+#endif
+#ifndef FTHEBAND_COMMIT
+ #define FTHEBAND_COMMIT ""
+#endif
 #ifndef FTHEBAND_SOURCE_URL
  #define FTHEBAND_SOURCE_URL ""
 #endif
@@ -691,7 +697,7 @@ struct AboutPage : Content {
                       "Copyright (C) 2026 FtheBand contributors.\n"
                       "This program is free software: you can redistribute it and/or modify it under the terms of the GNU Affero General Public\n"
                       "License, version 3. It comes with ABSOLUTELY NO WARRANTY. If you run a modified version for others over a network,\n"
-                      "you must offer them its source. Built with JUCE (AGPLv3).\n\n"
+                      "you must offer them its source. Built with JUCE (AGPLv3). Corresponding source: the link below and SOURCE.txt in the download.\n\n"
                       "Wurlitzer EP200 samples by Greg Sullivan (sullivang.net), SFZ mapping by kinwie, licensed under CC BY 3.0\n"
                       "(creativecommons.org/licenses/by/3.0). Trimmed and resampled for FtheBand.\n"
                       "Drum, cymbal and bass samples: Karoryfer Samples (Gogodze Phu Vol. II, Black And Blue Basses) and\n"
@@ -702,14 +708,14 @@ struct AboutPage : Content {
                       juce::dontSendNotification);
         licence.setButtonText ("GNU AGPL v3 licence text"); licence.setURL (juce::URL ("https://www.gnu.org/licenses/agpl-3.0.html"));
         const juce::String src (FTHEBAND_SOURCE_URL);
-        if (src.isNotEmpty()) { source.setButtonText ("Source code: " + src); source.setURL (juce::URL (src)); addAndMakeVisible (source); }
+        if (src.isNotEmpty()) { source.setButtonText ("Source code (AGPL-3.0): " + src + (juce::String (FTHEBAND_COMMIT).isNotEmpty() ? "   [version " + juce::String (FTHEBAND_DISPLAY_VERSION) + ", commit " + juce::String (FTHEBAND_COMMIT) + "]" : juce::String())); source.setURL (juce::URL (src)); addAndMakeVisible (source); }
         if (donateUrl.isNotEmpty()) { donate.setButtonText ("Donate"); donate.setURL (juce::URL (donateUrl)); addAndMakeVisible (donate); }  // hidden unless configured
         for (auto* h : { &licence, &source, &donate }) h->setJustificationType (juce::Justification::left);
     }
     void resized() override {
         auto r = getLocalBounds().reduced (24);
         auto row = r.removeFromTop (40); skinBox.setBounds (row.removeFromRight (260).reduced (0, 6)); skinLabel.setBounds (row.removeFromRight (60)); title.setBounds (row);
-        r.removeFromTop (8); body.setBounds (r.removeFromTop (330));
+        r.removeFromTop (8); body.setBounds (r.removeFromTop (345));
         licence.setBounds (r.removeFromTop (26).removeFromLeft (400)); source.setBounds (r.removeFromTop (26).removeFromLeft (700));
         r.removeFromTop (10); donate.setBounds (r.removeFromTop (30).removeFromLeft (120));
         r.removeFromTop (6); packCredits.setBounds (r);

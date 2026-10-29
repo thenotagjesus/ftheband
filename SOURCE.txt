@@ -1,0 +1,37 @@
+FtheBand: source code offer (GNU Affero General Public License, version 3)
+==========================================================================
+
+Program:   FtheBand 0.1.0-beta
+Commit:    @COMMIT@
+Licence:   GNU AGPL v3 only (see LICENSE)
+Source:    https://github.com/thenotagjesus/ftheband
+
+The line "Commit:" above is filled in when a release zip is made (tools/package-win.ps1) with the git
+commit the binary was built from; the same commit is shown in the About tab of FtheBand.exe. In the
+repository itself it reads @COMMIT@ because a file cannot contain the hash of the commit that stores it.
+
+The Corresponding Source of this program (AGPL v3, sections 1 and 6) is available, at no charge, from
+the network server above: browse or download that commit (git clone https://github.com/thenotagjesus/ftheband,
+then git checkout <commit>), or ask for a copy through https://github.com/thenotagjesus/ftheband/issues.
+This offer is valid for as long as you have this program and for at least three years after you received it.
+If you run a modified version of FtheBand for other people over a network, AGPL section 13 requires you to
+offer them the source of your version in the same way.
+
+What the source does not contain, and where the build gets it (all fetched at build time by CMake, pinned):
+  * JUCE 8.0.8 (AGPLv3 option):  https://github.com/juce-framework/JUCE  tag 8.0.8
+  * Steinberg ASIO SDK 2.3.4 (GPLv3 option):
+        https://download.steinberg.net/sdk_downloads/ASIO-SDK_2.3.4_2025-10-15.zip
+        SHA-256 d5ebf0c20dd2c5f43771fd0c1418f4b361bf52434ee670097cfa6b3a335e2eca
+  * The VST3 SDK, FLAC, Ogg Vorbis, zlib, libpng, libjpeg, HarfBuzz and SheenBidi code that ships inside JUCE
+    8.0.8 (their notices are in THIRD-PARTY-NOTICES.md).
+  * Sample packs: URLs and SHA-256 sums are in assets/samples.manifest and catalog/packs.json; credits and
+    licences in CREDITS.md.
+
+How to build (Windows 11, Visual Studio 2022 Build Tools, CMake, Ninja, git):  .\build.ps1
+(details in README.md).  The output is build\Ftheband_artefacts\Release\FtheBand.exe.
+
+Not part of this package: FlexASIO (MIT) is an optional download from its official GitHub release, made only
+after you confirm; ASIO4ALL is not included or downloaded.  See THIRD-PARTY-NOTICES.md.
+
+VST is a registered trademark of Steinberg Media Technologies GmbH.
+ASIO is a trademark and software of Steinberg Media Technologies GmbH.

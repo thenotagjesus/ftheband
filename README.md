@@ -1,8 +1,10 @@
 # FtheBand
 
+Free software under the GNU AGPL v3. Source code: https://github.com/thenotagjesus/ftheband (see `SOURCE.txt`).
+
 Version 0.1.0-beta. On first run FtheBand copies your saved settings, session and log from the old `%APPDATA%\SessionJam\` folder (`~/.config/SessionJam/` on Linux) into `Ftheband\`; the old folder is left untouched. Recordings now go to `Music/Ftheband Takes`; takes already saved in `Music/SessionJam Takes` are not moved.
 
-A Rocksmith-Session-Mode-style jam app with an adaptive backing band and per-track stem recording. See DESIGN.md for the architecture and roadmap.
+A play-along jam app with an adaptive backing band and per-track stem recording. See DESIGN.md for the architecture and roadmap.
 
 ## Build (Windows 11, VS Build Tools 2022, CMake, Ninja, git)
 ```powershell
@@ -10,7 +12,7 @@ A Rocksmith-Session-Mode-style jam app with an adaptive backing band and per-tra
 .\build.ps1 -NoAsio    # WASAPI/DirectSound only
 .\build.ps1 -AsioSdk C:\sdk\ASIOSDK   # use a local SDK
 ```
-The output is `build\Ftheband_artefacts\Release\FtheBand.exe`. To make a release zip (`dist\FtheBand-0.1.0-beta-win-x64.zip`) run `.\tools\package-win.ps1`: it builds, downloads the six CC0 sample packs listed in `catalog\packs.json` (cached in `%LOCALAPPDATA%\Ftheband-pack-cache`, every file checked against its SHA-256) and the FlexASIO installer (checked against a pinned SHA-256), and lays everything out next to `FtheBand.exe` (see "What is in the zip" below). Use `-NoBaseSamples` to leave out the base drum/bass/keys set, or `-PackCache <dir>` to choose the cache folder. JUCE 8.0.8 is fetched by CMake FetchContent. The ASIO SDK comes from Steinberg's official download (https://www.steinberg.net/asiosdk, dual GPLv3/proprietary licence), pinned to 2.3.4 with a SHA-256 check.
+The output is `build\Ftheband_artefacts\Release\FtheBand.exe`. To make a release zip (`dist\FtheBand-0.1.0-beta-win-x64.zip`) run `.\tools\package-win.ps1 -Commit <git-hash>` (the hash is stamped into `SOURCE.txt`; it is read from git if you omit it): it builds, downloads the six CC0 sample packs listed in `catalog\packs.json` (cached in `%LOCALAPPDATA%\Ftheband-pack-cache`, every file checked against its SHA-256) and lays everything out next to `FtheBand.exe` (see "What is in the zip" below). Use `-NoBaseSamples` to leave out the base drum/bass/keys set, or `-PackCache <dir>` to choose the cache folder. JUCE 8.0.8 is fetched by CMake FetchContent. The ASIO SDK comes from Steinberg's official download (https://www.steinberg.net/asiosdk, dual GPLv3/proprietary licence), pinned to 2.3.4 with a SHA-256 check.
 
 ### Plug-in hosting (VST3 / VST2 / VST1)
 - **VST3** hosting is always built in, on Windows and Linux.
@@ -25,13 +27,19 @@ cmake -S . -B build -DCMAKE_BUILD_TYPE=Release && cmake --build build -j
 ```
 ASIO is always off on Linux.
 
+## Credits and licence notes
+
+- Wurlitzer EP200 samples by Greg Sullivan (http://www.sullivang.net/), SFZ mapping by kinwie, from https://github.com/sfzinstruments/GregSullivan.E-Pianos, licensed under **Creative Commons Attribution 3.0 Unported** (https://creativecommons.org/licenses/by/3.0/). Full credit in `CREDITS.md` and `samples\CREDITS.txt` in the zip.
+- Drums, bass, organ, strings and the other packs are CC0 1.0 (Karoryfer Samples, Versilian Studios and others, see `CREDITS.md`).
+- Built with JUCE 8.0.8 (AGPLv3). Bundled-library notices are in `THIRD-PARTY-NOTICES.md`.
+- Source offer (AGPLv3): `SOURCE.txt` and https://github.com/thenotagjesus/ftheband
+
 ## What is in the zip
 ```
 FtheBand.exe
-README.md  LICENSE  LICENSING.md  CREDITS.md  THIRD-PARTY-NOTICES.md
+README.md  LICENSE  LICENSING.md  CREDITS.md  THIRD-PARTY-NOTICES.md  SOURCE.txt
 samples\            base sample set + samples.map          (loaded automatically, no download needed)
 samples\packs\<id>\ the 6 bundled CC0 packs, each with pack.map + pack.json + its licence/credits
-drivers\FlexASIO\   FlexASIO-1.10b.exe  (OPTIONAL free ASIO driver, MIT; never installed automatically)
 ```
 Unzip anywhere and run `FtheBand.exe`; it finds `samples\` next to itself. The **Get more sounds** tab lists the bundled packs as *installed, bundled*. Packs you download later go to `%APPDATA%\Ftheband\samples` and never replace a bundled pack with the same id. The CC0 packs need no attribution, but their credits are kept in `CREDITS.md` and shown in the app's About tab anyway.
 
@@ -43,22 +51,24 @@ FtheBand never needs a third-party driver. In order of preference when you have 
 
 ### Free ASIO drivers
 - **ASIO4ALL v2**: download from **https://asio4all.org** (https://asio4all.eu redirects there). It is freeware but its licence does not allow redistribution, so it is **not** included in this zip.
-- **FlexASIO** (MIT licence, https://github.com/dechamps/FlexASIO): the official installer `FlexASIO-1.10b.exe` is included in `drivers\FlexASIO\`. It is **optional and is never installed automatically**. To use it, click **Install FlexASIO (free ASIO driver)** on the Audio tab and confirm, or run the file yourself. FtheBand does not change anything on your system otherwise. Its licence and those of the libraries it is built from are in `THIRD-PARTY-NOTICES.md`.
+- **FlexASIO** (MIT licence, https://github.com/dechamps/FlexASIO): FtheBand does **not** bundle any installer. The Setup check (Audio tab, and once at first start) lists what is missing; its button can download the official `FlexASIO-1.10b.exe` from the FlexASIO GitHub release (SHA-256 checked) after you confirm. It is **optional and never installed automatically**. To use it, click **Setup check** on the Audio tab, then the FlexASIO download button, and confirm. FtheBand does not change anything on your system otherwise. Its licence and those of the libraries it is built from are in `THIRD-PARTY-NOTICES.md`.
 
 *ASIO is a trademark and software of Steinberg Media Technologies GmbH. FtheBand is not ASIO-certified, and is not endorsed by or affiliated with Steinberg, ASIO4ALL or FlexASIO. It hosts third-party ASIO drivers using Steinberg's ASIO SDK, which is used under its GPLv3 option (see LICENSING.md).*
+
+*VST is a registered trademark of Steinberg Media Technologies GmbH. FtheBand is not endorsed by or affiliated with Steinberg.*
 
 ## ASIO4ALL setup (recommended on Windows if you already use it)
 1. Download and install **ASIO4ALL v2** from https://asio4all.org (https://asio4all.eu redirects there).
 2. Close any other app that uses audio, then launch FtheBand. It picks the "ASIO4ALL v2" device automatically at 48 kHz with a 64–128 sample buffer (Windows only; ASIO code is behind `JUCE_WINDOWS`).
 3. Open the ASIO4ALL panel: FtheBand → **Audio** tab → **Control Panel**, or the green ASIO4ALL tray icon.
 4. Click the wrench icon to switch to *Advanced view*, then:
-   - Enable (power button on) your **USB guitar interface** (e.g. a Real Tone-style cable) and expand it. Enable its **input** (mono, 48 kHz).
+   - Enable (power button on) your **USB guitar interface** (e.g. a USB guitar cable) and expand it. Enable its **input** (mono, 48 kHz).
    - Enable **Realtek(R) Audio** and enable only its **outputs** (speakers/headphones). Disable Realtek inputs so the mic doesn't take input channel 1.
    - Disable every other device.
 5. Set **ASIO Buffer Size** to 128 samples (try 64 if you hear no crackles). If you get crackles, raise it to 256. Leave "Allow Pull Mode" on, and try "Always Resample 44.1kHz <-> 48kHz" off.
 6. On FtheBand's **Audio** tab, make sure **input channel 1** is the USB guitar interface and outputs 1+2 are the Realtek.
 
-The cable and the Realtek have separate clocks, so expect a possible occasional click on long takes. FlexASIO is an alternative (optional installer in `drivers\FlexASIO`). Without any ASIO driver, the app uses the built-in low-latency mode above (or shared WASAPI if that cannot open) with the USB guitar interface as input.
+The cable and the Realtek have separate clocks, so expect a possible occasional click on long takes. FlexASIO is an alternative (optional download from the Setup check). Without any ASIO driver, the app uses the built-in low-latency mode above (or shared WASAPI if that cannot open) with the USB guitar interface as input.
 
 ## Amp sims and effects
 1. On the **Inserts** tab, click **Plug-ins...**, then **Options... → Scan for new or updated VST3 plug-ins**. The scan starts with the default folders (`C:\Program Files\Common Files\VST3`; on Linux `~/.vst3`, `/usr/lib/vst3`, `/usr/local/lib/vst3`). Add your own folders in that prompt; they are remembered. On a VST2 build there is also a VST scan option, so you can add your `VstPlugins` folder.
@@ -127,13 +137,13 @@ AGPL-3.0-only (see LICENSE and LICENSING.md). Sample credits are in CREDITS.md a
 
 ## Windows: USB guitar interface + ASIO4ALL (clock drift)
 
-The Real Tone cable and the PC's Realtek output run on separate clocks. If one ASIO4ALL device aggregates
+The USB guitar cable and the PC's Realtek output run on separate clocks. If one ASIO4ALL device aggregates
 both, the clocks drift apart and after a few minutes you hear static. FtheBand avoids this by keeping
 the two devices separate:
 
 * **Output:** ASIO4ALL, output only. In the ASIO4ALL panel, **enable Realtek only and disable the USB guitar interface
   cable**. (WASAPI output works too, with more latency.)
-* **Input:** the Real Tone cable opens as its own WASAPI input-only device (shared mode, 48 kHz) on its own
+* **Input:** the USB guitar cable opens as its own WASAPI input-only device (shared mode, 48 kHz) on its own
   thread ("split input"). A drift-tracking resampler bridges it to the output clock. It uses a FIFO
   at about 2-3 blocks, a PI-controlled ratio within ±500 ppm, 6-point Lagrange interpolation and
   phase-aligned crossfades for recovery. It never inserts silence.

@@ -1,16 +1,16 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 # Copyright (C) 2026 FtheBand contributors
 # Builds FtheBand Release (ASIO ON, VST2 OFF) via build.ps1 and makes dist\FtheBand-<Version>-win-x64.zip containing:
-#   FtheBand.exe  README.md LICENSE LICENSING.md CREDITS.md THIRD-PARTY-NOTICES.md
+#   FtheBand.exe  README.md LICENSE LICENSING.md CREDITS.md THIRD-PARTY-NOTICES.md SOURCE.txt (commit stamped)
 #   samples\                base set (assets\samples) + samples.map           (-NoBaseSamples leaves it out)
 #   samples\packs\<id>\     every pack of catalog\packs.json: files + pack.map + pack.json + CREDIT.txt (CC0/CC-BY, sha256-verified)
 #   samples\CREDITS.txt     credit lines for the bundled packs
-#   drivers\FlexASIO\       FlexASIO-1.10b.exe (official release, MIT, sha256-pinned) + LICENSE.txt + README.txt. OPTIONAL, never installed by the app on its own.
+#   (no drivers or installers: FlexASIO is downloaded by the app from its official release only on the player's click; ASIO4ALL is only a link)
 # ASIO4ALL is NOT bundled (its licence forbids redistribution); the README links to https://asio4all.org.
 # Downloads are cached in -PackCache (default %LOCALAPPDATA%\Ftheband-pack-cache) and every file is checked against the sha256 in the catalog / pinned below.
-# Usage: .\tools\package-win.ps1 [-Version 0.1.0-beta] [-SkipBuild] [-Clean] [-AsioSdk C:\path\to\asiosdk] [-PackCache D:\cache] [-NoBaseSamples] [-NoPacks] [-FlexAsioExe C:\path\FlexASIO-1.10b.exe]
+# Usage: .\tools\package-win.ps1 [-Version 0.1.0-beta] [-SkipBuild] [-Clean] [-AsioSdk C:\path\to\asiosdk] [-PackCache D:\cache] [-NoBaseSamples] [-NoPacks]
 param([string]$Version = "0.1.0-beta", [switch]$SkipBuild, [switch]$Clean, [string]$AsioSdk = "", [string]$PackCache = "",
-      [switch]$NoBaseSamples, [switch]$NoPacks, [string]$FlexAsioExe = "")
+      [switch]$NoBaseSamples, [switch]$NoPacks, [string]$Commit = "")
 $ErrorActionPreference = "Stop"
 $ProgressPreference = "SilentlyContinue"
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
@@ -20,9 +20,6 @@ $dist = Join-Path $root "dist"
 $name = "FtheBand-$Version-win-x64"
 $zip  = Join-Path $dist "$name.zip"
 if (-not $PackCache) { $PackCache = Join-Path $env:LOCALAPPDATA "Ftheband-pack-cache" }
-$FlexVersion = "1.10b"
-$FlexUrl  = "https://github.com/dechamps/FlexASIO/releases/download/flexasio-$FlexVersion/FlexASIO-$FlexVersion.exe"
-$FlexSha  = "fe496bcc08d6c421c6244c8a60ac7b538560bda138000fd1a54ab8ebce031209"   # computed from the official asset; its Sigstore bundle verified against dechamps/FlexASIO
 $utf8 = New-Object System.Text.UTF8Encoding($false)
 
 function Get-Verified([string]$Url, [string]$Dest, [string]$Sha) {
@@ -55,7 +52,7 @@ if (-not $SkipBuild) {
     if ($AsioSdk) { $bargs["AsioSdk"] = $AsioSdk }
     & (Join-Path $root "build.ps1") @bargs
 }
-foreach ($f in @($exe, "LICENSE", "LICENSING.md", "CREDITS.md", "THIRD-PARTY-NOTICES.md", "README.md", "tools\FlexASIO-LICENSE.txt")) {
+foreach ($f in @($exe, "LICENSE", "LICENSING.md", "CREDITS.md", "THIRD-PARTY-NOTICES.md", "README.md", "SOURCE.txt")) {
     $p = if ([IO.Path]::IsPathRooted($f)) { $f } else { Join-Path $root $f }
     if (-not (Test-Path $p)) { throw "Missing $p" }
 }
@@ -67,6 +64,12 @@ if (Test-Path $stage) { Remove-Item -Recurse -Force $stage }
 New-Item -ItemType Directory -Path $stage | Out-Null
 Copy-Item $exe $stage
 foreach ($f in "LICENSE", "LICENSING.md", "CREDITS.md", "THIRD-PARTY-NOTICES.md", "README.md") { Copy-Item (Join-Path $root $f) $stage }
+# SOURCE.txt: stamp the commit this binary was built from (-Commit, else git rev-parse in the tree)
+if (-not $Commit) { try { $Commit = (& git -C $root rev-parse HEAD 2>$null | Select-Object -First 1) } catch { $Commit = "" } }
+if (-not $Commit -or $Commit -notmatch '^[0-9a-f]{7,40}$') { throw "SOURCE.txt needs the git commit: pass -Commit <hash> (the tree has no .git)" }
+$src = [IO.File]::ReadAllText((Join-Path $root "SOURCE.txt"), $utf8)
+$src = $src.Replace("Commit:    @COMMIT@", "Commit:    $Commit  (https://github.com/thenotagjesus/ftheband/commit/$Commit)")
+[IO.File]::WriteAllText((Join-Path $stage "SOURCE.txt"), $src, $utf8)
 
 # ---- base sample set (assets\samples: drums\ bass\ keys\ + samples.map) -> samples\
 $samples = Join-Path $stage "samples"
@@ -84,6 +87,8 @@ if (-not $NoPacks) {
     $credits = New-Object System.Text.StringBuilder
     [void]$credits.AppendLine("Sample packs bundled with FtheBand (all CC0 1.0 unless stated). Files are unmodified upstream samples, verified by SHA-256.")
     [void]$credits.AppendLine("FtheBand's own list and licence evidence: CREDITS.md. Pack-level metadata: packs\<id>\pack.json")
+    [void]$credits.AppendLine("")
+    [void]$credits.AppendLine("Keys (base set, samples\keys): Wurlitzer EP200 Electric Piano v1.1 by Greg Sullivan (http://www.sullivang.net/), SFZ mapping by kinwie, from https://github.com/sfzinstruments/GregSullivan.E-Pianos (commit 8c3e581acda3594b553948ff0222d4f84a698376). Licensed under Creative Commons Attribution 3.0 Unported, https://creativecommons.org/licenses/by/3.0/ . Used without endorsement by the author.")
     [void]$credits.AppendLine("")
     $nFiles = 0; $nBytes = 0; $nDown = 0
     foreach ($p in $catalog) {
@@ -122,33 +127,7 @@ if (-not $NoPacks) {
     Write-Host ("bundled packs: {0} packs, {1} files, {2:N1} MB ({3} downloaded this run, rest from cache {4})" -f @($catalog).Count, $nFiles, ($nBytes / 1MB), $nDown, $PackCache)
 }
 
-# ---- optional FlexASIO installer (official release asset, sha256-pinned). Never run by this script. Not ASIO4ALL.
-$drv = Join-Path $stage "drivers\FlexASIO"
-New-Item -ItemType Directory -Force -Path $drv | Out-Null
-$flexName = "FlexASIO-$FlexVersion.exe"
-if ($FlexAsioExe) {
-    if ((Get-FileHash $FlexAsioExe -Algorithm SHA256).Hash.ToLower() -ne $FlexSha) { throw "$FlexAsioExe does not match the pinned FlexASIO sha256" }
-    Copy-Item $FlexAsioExe (Join-Path $drv $flexName)
-} else {
-    $fc = Join-Path $PackCache $flexName
-    [void](Get-Verified $FlexUrl $fc $FlexSha)
-    Copy-Item $fc (Join-Path $drv $flexName)
-}
-Copy-Item (Join-Path $PSScriptRoot "FlexASIO-LICENSE.txt") (Join-Path $drv "LICENSE.txt")
-$flexReadme = @"
-FlexASIO $FlexVersion - optional free ASIO driver (MIT licence)
-Official installer, unmodified: $FlexUrl  (SHA-256 $FlexSha)
-Project: https://github.com/dechamps/FlexASIO
-
-FtheBand does NOT install this by itself. Run it only if you want an ASIO driver: either click "Install FlexASIO (free ASIO driver)"
-on FtheBand's Audio tab, or double-click $flexName. Restart FtheBand afterwards and pick "FlexASIO" in the Audio tab.
-FtheBand's built-in low-latency mode (Audio tab) works without any ASIO driver.
-
-ASIO is a trademark and software of Steinberg Media Technologies GmbH. FlexASIO is not made by or affiliated with FtheBand or Steinberg.
-Licences of FlexASIO and the libraries it is built from: THIRD-PARTY-NOTICES.md.
-ASIO4ALL (not included) can be downloaded from https://asio4all.org
-"@
-[IO.File]::WriteAllText((Join-Path $drv "README.txt"), $flexReadme, $utf8)
+# ---- no third-party installers or drivers are bundled: FtheBand downloads FlexASIO from its official release only if the player asks (Setup check); ASIO4ALL is only a link.
 
 # ---- zip (forward-slash entry names, FtheBand.exe at the zip root, no wrapper folder, no ASIO4ALL anywhere)
 Add-Type -AssemblyName System.IO.Compression
