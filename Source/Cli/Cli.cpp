@@ -7,6 +7,8 @@
 #include "Test/GuitarSynth.h"
 #include <cstdio>
 #include <map>
+#include <thread>
+#include <atomic>
 
 #include "../Engine/DriftResampler.h"
 namespace sj {
@@ -79,7 +81,7 @@ int leadingQuiet (const std::vector<float>& x) {
     return len >= (int) (0.3 * SR) ? len : 0;
 }
 struct NoiseInfo { int samples = 0; float floorDb = -100; juce::StringArray notches; };
-NoiseInfo gLastNoise;
+thread_local NoiseInfo gLastNoise;
 void learnNoise (ChordTracker& tr, const std::vector<float>& x) {
     gLastNoise = {}; if (! gLearnNoise) return;
     if (const int q = leadingQuiet (x)) { tr.learnNoiseFrom (x.data(), q); gLastNoise.samples = q; gLastNoise.floorDb = tr.noiseFloorDb;
@@ -90,7 +92,7 @@ void highPass2 (std::vector<float>& x, float hz) {   // 2nd-order Butterworth (1
     for (auto& s : x) s = f.processSample (s);
 }
 struct TrackStats { bool strangleDetected = false; float lowRatioDb = 0; };
-TrackStats gLastTrack;
+thread_local TrackStats gLastTrack;
 TrackResult track (const std::vector<float>& x, int block = 256, bool countInGate = true, InputInstrument inst = gInstrument, bool strangle = gStrangle) {
     ChordTracker tr; tr.setInstrument (inst, gTuning, gCents); tr.strangleHint = strangle; tr.prepare (SR); tr.params.countInGate = countInGate; learnNoise (tr, x); TrackResult r; int lastCount = 0;
     for (size_t p = 0; p < x.size(); p += (size_t) block) {
@@ -214,8 +216,91 @@ std::vector<float> synthPart (GuitarSynth& gs, const GuitarSynth::Tuning& tu, do
 }
 ChordLabel C (int root, int type, int bass = -1) { return { root % 12, type, bass < 0 ? root % 12 : bass % 12, 1 }; }
 int majminClass (const ChordLabel& c) { if (! c.valid()) return -1; return c.root * 2 + (c.minorish() ? 1 : 0); }
+/** Metal-style part for the held-out 'metal' progressions: each chord is a bar of palm-muted 8th-note chugs (two or three strings),
+    with an open accented hit on beat 1 and an occasional single-note chug (truth = the power chord of that root). Mid-gain "driven" input is not
+    simulated: the DI of a clean Bass VI is what the detector sees. */
+std::vector<float> synthMetalPart (GuitarSynth& gs, const GuitarSynth::Tuning& tu, double bpm, const std::vector<ChordLabel>& chords,
+                                   std::vector<Seg>& truth, float noiseSnr, bool hum, int64_t lead) {
+    const double beat = SR * 60 / bpm; int64_t t = lead;
+    std::vector<float> x ((size_t) (lead + beat * 4 * ((double) chords.size() + 2)), 0.0f);
+    std::uniform_real_distribution<float> u (0, 1);
+    for (size_t i = 0; i < chords.size(); ++i) {
+        const auto& ch = chords[i];
+        auto v = gs.voicing (tu, ch.root, ch.type, (int) i + 1, false);   // odd variants: no octave doubling for power chords
+        if (v.empty()) v = gs.voicing (tu, ch.root, ch.type, (int) i, false);
+        const bool single = ch.type == Power && (i % 3 == 1);        // some bars are single-note chugs on the root
+        const float dyn = 0.55f + 0.4f * u (gs.random());
+        const int64_t start = t;
+        for (int b = 0; b < 8; ++b) {
+            const int64_t bt = t + (int64_t) (b * beat / 2 + (u (gs.random()) - 0.5f) * 0.008f * SR);
+            const bool accent = b == 0 || b == 4;
+            const bool mute = ! accent && u (gs.random()) < 0.8f;
+            if (single) gs.pluck (x, bt, v[0], dyn * (accent ? 1.0f : 0.8f), mute, accent ? 1.6 : 0.8);
+            else gs.strum (x, bt, v, +1, dyn * (accent ? 1.0f : 0.8f), mute, accent ? 1.6 : 0.8);
+        }
+        t += (int64_t) (4 * beat);
+        truth.push_back ({ start, t, ch });
+    }
+    gs.body (x);
+    float pk = 0; for (float s : x) pk = juce::jmax (pk, std::abs (s)); for (auto& s : x) s *= 0.4f / (pk + 1e-9f);
+    if (noiseSnr > 0) gs.addNoise (x, noiseSnr, hum);
+    x.resize ((size_t) t + (size_t) (beat * 4)); return x;
+}
 
 // ---------------------------------------------------------------------------------------------- --eval
+/** One synthetic case: progression x tuning x tempo x noise. Cases are rendered/tracked independently (and in parallel) and aggregated in order,
+    so the numbers are identical to a serial run. SJ_SPLIT=dev|hold|metal|all picks the subset (default: the original 8 progressions, i.e. 'orig'):
+      dev   = pop, minor, blues, power, unexpected   (the progressions used while tuning the detector)
+      hold  = jazzish-m7, sus, inversions            (held-out progressions: never used to pick a parameter)
+      metal = new riff-style progressions with palm-muted chugs, rendered with fresh seeds (held out: never tuned on). */
+struct EvalFrame { int truthRoot, truthType, truthBass, gotRoot, gotType, gotBass; };
+struct EvalCase { std::string name, tuning; double bpm; float nz; uint32_t seed; bool metal; std::vector<ChordLabel> prog; };
+struct EvalOut { int frames = 0, exact = 0, mm = 0, rootOk = 0, bassFrames = 0, bassOk = 0; std::vector<double> lat; int missed = 0; std::vector<EvalFrame> fr; std::string one; };
+EvalOut runEvalCase (const EvalCase& ec, bool wantFrames) {
+    EvalOut a;
+    auto tunings = GuitarSynth::tunings();
+    const GuitarSynth::Tuning* tup = nullptr; for (auto& t : tunings) if (ec.tuning == t.name) tup = &t;
+    const auto& tu = *tup;
+    GuitarSynth gs (SR, ec.seed);
+    std::vector<Seg> truth;
+    auto x = ec.metal ? synthMetalPart (gs, tu, ec.bpm, ec.prog, truth, ec.nz, ec.nz > 0, (int64_t) (0.5 * SR))
+                      : synthPart (gs, tu, ec.bpm, ec.prog, 1, truth, -1, 0, ec.nz, ec.nz > 0, (int64_t) (0.5 * SR));
+    const bool bvi = juce::String (tu.name).startsWith ("bassvi");
+    if (std::string (tu.name) == "bassvi-strangle") highPass2 (x, 150.0f);
+    static const juce::String traceName = juce::SystemStats::getEnvironmentVariable ("SJ_TRACE", {});   // "<prog>:<tuning>:<bpm>:<noise>"
+    if (traceName.isNotEmpty() && traceName == juce::String (ec.name) + ":" + ec.tuning + ":" + juce::String (ec.bpm, 0) + ":" + juce::String (ec.nz, 0)) {
+        for (auto& sg : truth) std::fprintf (stderr, "TRUTH %.2f-%.2f %s\n", (double) sg.start / SR, (double) sg.end / SR, sg.truth.name().c_str());
+        ChordTracker tr; tr.setInstrument (bvi ? InputInstrument::BassVI : InputInstrument::GuitarStandard, Tuning::Standard, 0); tr.prepare (SR); tr.params.countInGate = false; learnNoise (tr, x);
+        for (size_t p = 0; p < x.size(); p += 256) {
+            const int n = (int) juce::jmin<size_t> (256, x.size() - p); const int64_t oc = tr.onsetCount; tr.process (x.data() + p, n);
+            if (tr.onsetCount != oc) std::fprintf (stderr, "%.3f ONSET\n", (double) tr.lastOnset / SR);
+            if (((p / 256) % 4) == 3) { std::string ns; for (auto& nt : tr.notes) ns += std::string (noteName (nt.midi)) + std::to_string (nt.midi / 12 - 1) + ":" + std::to_string ((int) nt.salience) + " ";
+                std::fprintf (stderr, "%.3f commit %-8s frame %-8s bass %d  %s\n", (double) (p + 256) / SR, tr.chord.name().c_str(), tr.frameChord.name().c_str(), tr.bassMidi, ns.c_str()); }
+        }
+    }
+    auto r = track (x, 256, false, bvi ? InputInstrument::BassVI : InputInstrument::GuitarStandard, false);
+    const double beat = SR * 60 / ec.bpm;
+    for (auto& row : r.rows) {
+        const Seg* sg = nullptr; for (auto& s : truth) if (row.t >= s.start && row.t < s.end) { sg = &s; break; }
+        if (! sg || ! sg->truth.valid()) continue;
+        if (row.t < sg->start + (int64_t) beat && sg != &truth.front()) continue;   // allow 1 beat to react
+        if (sg == &truth.front() && row.t < sg->start + (int64_t) beat) continue;
+        ++a.frames;
+        a.exact += row.chord.sameChord (sg->truth);
+        const bool pw = sg->truth.type == Power;
+        a.mm += pw ? row.chord.root == sg->truth.root : majminClass (row.chord) == majminClass (sg->truth);
+        a.rootOk += row.chord.root == sg->truth.root;
+        ++a.bassFrames; a.bassOk += row.chord.bass == sg->truth.bass;
+        if (wantFrames) a.fr.push_back ({ sg->truth.root, sg->truth.type, sg->truth.bass, row.chord.root, row.chord.type, row.chord.bass });
+    }
+    for (size_t k = 1; k < truth.size(); ++k) {
+        if (! truth[k].truth.valid() || truth[k].truth.sameChord (truth[k - 1].truth)) continue;
+        double lat = -1;
+        for (auto& row : r.rows) if (row.t >= truth[k].start && row.t < truth[k].end && row.chord.sameChord (truth[k].truth)) { lat = (double) (row.t - truth[k].start) / beat; break; }
+        if (lat < 0) ++a.missed; else a.lat.push_back (lat);
+    }
+    return a;
+}
 int runEval (const juce::File& reportFile) {
     struct Agg { int frames = 0, exact = 0, mm = 0, rootOk = 0, bassFrames = 0, bassOk = 0; std::vector<double> lat; int missed = 0; };
     std::map<std::string, Agg> by; Agg all;
@@ -230,54 +315,70 @@ int runEval (const juce::File& reportFile) {
         { "inversions", { C(0,Maj), C(0,Maj,4), C(9,Min), C(5,Maj), C(7,Maj,11), C(0,Maj) } },
         { "unexpected", { C(4,Min), C(4,Min), C(9,Min), C(3,Maj), C(4,Min), C(1,Maj) } },
     };
+    // held-out, metal-style riffs (palm-muted chugs + open power chords, mixed with a few minor/major triads)
+    std::vector<std::pair<std::string, std::vector<ChordLabel>>> metalProgs = {
+        { "metal-E-chug", { C(4,Power), C(7,Power), C(4,Power), C(9,Power), C(4,Power), C(10,Power) } },
+        { "metal-lowF-riff", { C(5,Power), C(8,Power), C(5,Power), C(1,Power), C(3,Power), C(5,Power) } },
+        { "metal-minor-mix", { C(2,Min), C(2,Power), C(10,Maj), C(5,Power), C(0,Maj), C(9,Min) } },
+    };
+    const std::string split = juce::SystemStats::getEnvironmentVariable ("SJ_SPLIT", "orig").toStdString();
+    auto inSplit = [&] (const std::string& n, bool metal) {
+        if (split == "metal") return metal;
+        if (metal) return split == "all";
+        if (split == "orig" || split == "all") return true;
+        const bool h = n == "jazzish-m7" || n == "sus" || n == "inversions";
+        return split == "hold" ? h : ! h;
+    };
     auto tunings = GuitarSynth::tunings();
     const double tempos[] = { 72, 100, 132 };
     const float noises[] = { 0, 30, 18 };
-    uint32_t seed = 7;
-    for (auto& [name, prog] : progs)
-        for (auto& tu : tunings)
-            for (double bpm : tempos)
-                for (float nz : noises) {
-                    if (std::string (tu.name) != "standard" && (nz == 18 || nz == 60)) continue;
-                    static const bool quick = juce::SystemStats::getEnvironmentVariable ("SJ_QUICK", {}).isNotEmpty();
-                    if (quick && std::string (tu.name) != "standard" && ! juce::String (tu.name).startsWith ("bassvi")) continue;
-                    static const juce::String only = juce::SystemStats::getEnvironmentVariable ("SJ_ONLY", {});
-                    if (only.isNotEmpty() && ! juce::String (tu.name).startsWith (only)) continue;
-                    GuitarSynth gs (SR, seed++);
-                    std::vector<Seg> truth;
-                    auto x = synthPart (gs, tu, bpm, prog, 1, truth, -1, 0, nz, nz > 0, (int64_t) (0.5 * SR));
-                    const bool bvi = juce::String (tu.name).startsWith ("bassvi");
-                    if (std::string (tu.name) == "bassvi-strangle") highPass2 (x, 150.0f);
-                    static const bool one = juce::SystemStats::getEnvironmentVariable ("SJ_ONE", {}).isNotEmpty();
-                    if (one) { for (auto& sg : truth) std::fprintf (stderr, "TRUTH %.2f %s\n", sg.start / SR, sg.truth.name().c_str()); }
-                    auto r = track (x, 256, false, bvi ? InputInstrument::BassVI : InputInstrument::GuitarStandard, false);
-                    Agg a; const double beat = SR * 60 / bpm;
-                    for (auto& row : r.rows) {
-                        const Seg* sg = nullptr; for (auto& s : truth) if (row.t >= s.start && row.t < s.end) { sg = &s; break; }
-                        if (! sg || ! sg->truth.valid()) continue;
-                        if (row.t < sg->start + (int64_t) beat && sg != &truth.front()) continue;   // allow 1 beat to react
-                        if (sg == &truth.front() && row.t < sg->start + (int64_t) beat) continue;
-                        ++a.frames;
-                        a.exact += row.chord.sameChord (sg->truth);
-                        const bool pw = sg->truth.type == Power;
-                        a.mm += pw ? row.chord.root == sg->truth.root : majminClass (row.chord) == majminClass (sg->truth);
-                        a.rootOk += row.chord.root == sg->truth.root;
-                        ++a.bassFrames; a.bassOk += row.chord.bass == sg->truth.bass;
+    static const bool quick = juce::SystemStats::getEnvironmentVariable ("SJ_QUICK", {}).isNotEmpty();
+    static const juce::String only = juce::SystemStats::getEnvironmentVariable ("SJ_ONLY", {});
+    std::vector<EvalCase> cases;
+    {   // original enumeration order and seeds are preserved exactly (the seed advances for every case that is not skipped)
+        uint32_t seed = 7;
+        for (auto& [name, prog] : progs)
+            for (auto& tu : tunings)
+                for (double bpm : tempos)
+                    for (float nz : noises) {
+                        if (std::string (tu.name) != "standard" && (nz == 18 || nz == 60)) continue;
+                        if (quick && std::string (tu.name) != "standard" && ! juce::String (tu.name).startsWith ("bassvi")) continue;
+                        if (only.isNotEmpty() && ! juce::String (tu.name).startsWith (only)) continue;
+                        const uint32_t sd = seed++;
+                        if (inSplit (name, false)) cases.push_back ({ name, tu.name, bpm, nz, sd, false, prog });
                     }
-                    for (size_t k = 1; k < truth.size(); ++k) {
-                        if (! truth[k].truth.valid() || truth[k].truth.sameChord (truth[k - 1].truth)) continue;
-                        double lat = -1;
-                        for (auto& row : r.rows) if (row.t >= truth[k].start && row.t < truth[k].end && row.chord.sameChord (truth[k].truth)) { lat = (double) (row.t - truth[k].start) / beat; break; }
-                        if (lat < 0) { ++a.missed; ++all.missed; ++by[name].missed; } else { a.lat.push_back (lat); all.lat.push_back (lat); by[name].lat.push_back (lat); }
+        seed = 100000;   // metal: fresh seeds, never part of the original eval
+        for (auto& [name, prog] : metalProgs)
+            for (auto& tu : tunings)
+                for (double bpm : tempos)
+                    for (float nz : noises) {
+                        if (std::string (tu.name) != "standard" && (nz == 18 || nz == 60)) continue;
+                        if (quick && std::string (tu.name) != "standard" && ! juce::String (tu.name).startsWith ("bassvi")) continue;
+                        if (only.isNotEmpty() && ! juce::String (tu.name).startsWith (only)) continue;
+                        const uint32_t sd = seed++;
+                        if (inSplit (name, true)) cases.push_back ({ name, tu.name, bpm, nz, sd, true, prog });
                     }
-                    auto add = [&] (Agg& d) { d.frames += a.frames; d.exact += a.exact; d.mm += a.mm; d.rootOk += a.rootOk; d.bassFrames += a.bassFrames; d.bassOk += a.bassOk; };
-                    add (all); add (by[name]);
-                    if (one) return 0;
-                    auto lats = a.lat; std::sort (lats.begin(), lats.end());
-                    const double med = lats.empty() ? -1 : lats[lats.size() / 2], p90 = lats.empty() ? -1 : lats[(size_t) (lats.size() * 0.9)];
-                    report << name << "," << tu.name << "," << bpm << "," << nz << "," << (double) a.exact / juce::jmax (1, a.frames) << "," << (double) a.mm / juce::jmax (1, a.frames)
-                           << "," << (double) a.bassOk / juce::jmax (1, a.bassFrames) << "," << med << "," << p90 << "," << a.missed << "\n";
-                }
+    }
+    static const juce::String diagPath = juce::SystemStats::getEnvironmentVariable ("SJ_DIAG", {});
+    std::vector<EvalOut> outs (cases.size());
+    { std::atomic<size_t> next { 0 };
+      const unsigned nt = juce::jmax (1u, juce::jmin (8u, std::thread::hardware_concurrency()));
+      std::vector<std::thread> pool;
+      for (unsigned t = 0; t < nt; ++t) pool.emplace_back ([&] { for (size_t k; (k = next++) < cases.size();) outs[k] = runEvalCase (cases[k], diagPath.isNotEmpty()); });
+      for (auto& th : pool) th.join(); }
+    std::string diag = "case,tuning,bpm,noise,truthRoot,truthType,truthBass,gotRoot,gotType,gotBass\n";
+    for (size_t ci = 0; ci < cases.size(); ++ci) {
+        auto& ec = cases[ci]; auto& a = outs[ci]; const auto& name = ec.name; const auto& tuName = ec.tuning; const double bpm = ec.bpm; const float nz = ec.nz;
+        if (diagPath.isNotEmpty()) for (auto& f : a.fr) { char buf[256]; std::snprintf (buf, sizeof buf, "%s,%s,%g,%g,%d,%d,%d,%d,%d,%d\n", name.c_str(), tuName.c_str(), bpm, (double) nz, f.truthRoot, f.truthType, f.truthBass, f.gotRoot, f.gotType, f.gotBass); diag += buf; }
+        all.missed += a.missed; by[name].missed += a.missed; for (double l : a.lat) { all.lat.push_back (l); by[name].lat.push_back (l); }
+        auto add = [&] (Agg& d) { d.frames += a.frames; d.exact += a.exact; d.mm += a.mm; d.rootOk += a.rootOk; d.bassFrames += a.bassFrames; d.bassOk += a.bassOk; };
+        add (all); add (by[name]);
+        auto lats = a.lat; std::sort (lats.begin(), lats.end());
+        const double med = lats.empty() ? -1 : lats[lats.size() / 2], p90 = lats.empty() ? -1 : lats[(size_t) (lats.size() * 0.9)];
+        report << name << "," << tuName << "," << bpm << "," << nz << "," << (double) a.exact / juce::jmax (1, a.frames) << "," << (double) a.mm / juce::jmax (1, a.frames)
+               << "," << (double) a.bassOk / juce::jmax (1, a.bassFrames) << "," << med << "," << p90 << "," << a.missed << "\n";
+    }
+    if (diagPath.isNotEmpty()) juce::File::getCurrentWorkingDirectory().getChildFile (diagPath).replaceWithText (juce::String (diag));
     auto pct = [] (int a, int b) { return juce::String (100.0 * a / juce::jmax (1, b), 1) + "%"; };
     auto line = [&] (const std::string& n, Agg& a) {
         std::sort (a.lat.begin(), a.lat.end());

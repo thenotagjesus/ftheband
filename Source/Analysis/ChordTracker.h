@@ -2,6 +2,7 @@
 // Copyright (C) 2026 FtheBand contributors
 #pragma once
 #include "Music/InputInstrument.h"
+#include "Analysis/NnlsNotes.h"
 #include <JuceHeader.h>
 #include <deque>
 #include "Music/Theory.h"
@@ -57,7 +58,6 @@ public:
     /** Tuning only widens/narrows the search range (and is used for display). Key/chord detection stays in sounding pitch. */
     void setInstrument (InputInstrument i, Tuning t = Tuning::Standard, float customCents = 0) {
         instrument = i; profile = inputProfile (i, t, customCents); N = 1 << profile.fftOrder;
-        if (profile.lowRegister) params.confirmSeconds = 0.12f;
     }
     static constexpr int hopC = 1024;       // chroma frame hop
     static constexpr int NO = 1024;         // onset FFT
@@ -77,6 +77,7 @@ public:
     } params;
 
     struct Note { int midi; float salience; };
+    bool useNnls = true;   // false = legacy peak-picking multiPitch front end (A/B only)
 
     // --------------------------------------------------------------- outputs (read by owner on same thread)
     ChordLabel chord;                       // committed (smoothed) chord
@@ -144,7 +145,7 @@ public:
         sr = sampleRate;
         hist.assign ((size_t) histSize, 0.0f);
         fft = std::make_unique<juce::dsp::FFT> (profile.fftOrder); fftO = std::make_unique<juce::dsp::FFT> (10);
-        work.assign ((size_t) N * 2, 0.0f); workO.assign ((size_t) NO * 2, 0.0f);
+        work.assign ((size_t) N * 2, 0.0f); work2.assign ((size_t) N * 2, 0.0f); workO.assign ((size_t) NO * 2, 0.0f);
         prevLogMag.assign (NO / 2 + 1, 0.0f);
         winO.resize (NO); for (int i = 0; i < NO; ++i) winO[(size_t) i] = 0.5f - 0.5f * std::cos (juce::MathConstants<float>::twoPi * i / NO);
         beat.prepare (sr);
@@ -152,6 +153,8 @@ public:
         reset();
         // candidate pitch table (E1..E6), harmonic search ranges
         binHz = (float) (sr / N);
+        nnls.prepare (sr, N, profile.loMidi, profile.hiMidi); nnls.sparsity = 0.15f; nnls.sweeps = 30; nnls.nPartials = 14;
+        nnls.tilt = { 0.80f, 0.94f, 0.90f }; notes.reserve (96); Xbuf.reserve ((size_t) N);
     }
     void reset() {
         std::fill (hist.begin(), hist.end(), 0.0f); totalSamples = 0; sinceC = sinceO = 0;
@@ -191,11 +194,51 @@ public:
     bool present = false; int64_t lastActive = -1000000;   // last frame end the presence gate was open
     bool isSilent() const { return rmsDb < gate() && totalSamples - lastOnset > (int64_t) (0.5 * sr); }
     std::vector<Note> notes;                // last frame's multi-pitch notes
+    NnlsNotes nnls; std::vector<float> Xbuf;
+    // bass note of the committed chord: the root, unless the same other chord tone has been the lowest note in nearly
+    // every frame since the chord was committed (a real inversion / slash chord). Single frames are noisy: an upstroke
+    // that skips the bass strings, or the previous chord's low string still ringing, must not change the bass.
+    std::array<int, 12> bassCnt {}; int bassFrames = 0;
+    void countBass (int pc) { if (pc >= 0) ++bassCnt[(size_t) pc]; ++bassFrames; }
+    int settledBass (const ChordLabel& c) const {
+        const float need = 0.75f; const int minF = 8;
+        if (bassFrames < minF) return c.root;
+        int bestPc = -1, bestN = 0;
+        for (int pc = 0; pc < 12; ++pc) if (bassCnt[(size_t) pc] > bestN && chordContains (c.root, c.type, pc)) { bestN = bassCnt[(size_t) pc]; bestPc = pc; }
+        return bestPc >= 0 && (float) bestN >= need * (float) bassFrames ? bestPc : c.root;
+    }
+    void nnlsNotes (std::vector<float>& X, int len) {
+        notes.clear();
+        const float cut = strangleActive() ? 150.0f : 0.0f;
+        constexpr float gam = 0.30f;   // previous-chord ring-down discount (see DESIGN.md)
+        std::array<float, NnlsNotes::maxNotes> post {};
+        bool havePre = false;
+        if (onsetCount >= 2) {
+            const int64_t pe = lastOnset - (int64_t) (0.004 * sr), ps = pe - len;
+            if (ps >= 0 && totalSamples - ps <= (int64_t) histSize && totalSamples - len > ps) {
+                std::fill (work2.begin(), work2.end(), 0.0f);
+                for (int i = 0; i < len; ++i) work2[(size_t) i] = sampleAt (ps + i) * (0.5f - 0.5f * std::cos (juce::MathConstants<float>::twoPi * (i + 0.5f) / len));
+                fft->performFrequencyOnlyForwardTransform (work2.data(), true);
+                for (int k = 0; k < N / 2; ++k) work2[(size_t) k] = std::sqrt (work2[(size_t) k]);
+                if (noiseFrames > 0) { const float sc = std::sqrt ((float) len / N) * 1.5f;
+                    for (int k = 0; k < N / 2; ++k) work2[(size_t) k] = juce::jmax (0.0f, work2[(size_t) k] - sc * noiseSpec[(size_t) k]); }
+                nnls.analyse (work2.data(), len, cut);
+                post = nnls.act; havePre = true;
+            }
+        }
+        nnls.analyse (X.data(), len, cut);
+        std::array<float, NnlsNotes::maxNotes> sal {};
+        for (int n = 0; n < nnls.nNotes; ++n) { sal[(size_t) n] = havePre ? juce::jmax (0.0f, nnls.act[(size_t) n] - gam * post[(size_t) n]) : nnls.act[(size_t) n]; }
+        float mx = 0; for (int n = 0; n < nnls.nNotes; ++n) mx = juce::jmax (mx, sal[(size_t) n]);
+        const float thr = 0.25f * mx;
+        for (int n = 0; n < nnls.nNotes; ++n) if (sal[(size_t) n] >= thr && mx > 0) notes.push_back ({ nnls.lo + n, sal[(size_t) n] * 60.0f / mx });
+    }
+
 
 private:
-    static constexpr int histSize = 1 << 15;
+    static constexpr int histSize = 1 << 16;
     double sr = 48000; float binHz = 5.86f;
-    std::vector<float> hist, work, workO, prevLogMag, winO;
+    std::vector<float> hist, work, work2, workO, prevLogMag, winO;
     std::unique_ptr<juce::dsp::FFT> fft, fftO;
     int sinceC = 0, sinceO = 0;
     float rmsAcc = 0; int rmsCnt = 0;
@@ -283,7 +326,7 @@ private:
             work[(size_t) i] = sampleAt (start + i) * w;
         }
         fft->performFrequencyOnlyForwardTransform (work.data(), true);
-        std::vector<float> X (work.begin(), work.begin() + N / 2);
+        Xbuf.assign (work.begin(), work.begin() + N / 2); auto& X = Xbuf;
         if (profile.lowRegister && end - lastOnset < (int64_t) (0.5 * sr)) {     // strangle auto-detect on note frames
             double lo = 1e-12, mid = 1e-12; const int k100 = (int) (100 / binHz), k400 = (int) (400 / binHz), k30 = (int) (30 / binHz);
             for (int k = k30; k < k400 && k < (int) X.size(); ++k) (k < k100 ? lo : mid) += (double) X[(size_t) k] * X[(size_t) k];
@@ -295,7 +338,7 @@ private:
         if (noiseFrames > 0) { const float sc = std::sqrt ((float) len / N) * 1.5f;
             for (size_t k = 0; k < X.size(); ++k) X[k] = juce::jmax (0.0f, X[k] - sc * noiseSpec[k]); }
 
-        multiPitch (X, len);
+        if (useNnls) nnlsNotes (X, len); else multiPitch (X, len);
         std::array<float, 12> c {}; float tot = 0;
         int lowest = 1000; float maxSal = 0;
         for (auto& nt : notes) maxSal = juce::jmax (maxSal, nt.salience);
@@ -352,7 +395,7 @@ private:
         if (countInActive() || frameDb < gate() + (profile.lowRegister ? 0.0f : 4.0f) || end - lastOnset > (int64_t) (params.holdAfterOnset * sr)) { candidate = -1; candFrames = 0; return false; }
         int top = 0; for (int i = 1; i < (int) evidence.size(); ++i) if (evidence[(size_t) i] > evidence[(size_t) top]) top = i;
         const int cur = chord.valid() ? chord.root * NumChordTypes + chord.type : -1;
-        if (top == cur) { candidate = -1; candFrames = 0; chord.bass = bassPc >= 0 && chordContains (chord.root, chord.type, bassPc) ? bassPc : chord.root; return false; }
+        if (top == cur) { candidate = -1; candFrames = 0; countBass (bassPc); chord.bass = settledBass (chord); return false; }
         if (top != candidate) { candidate = top; candFrames = 0; }
         ++candFrames;
         const float curE = cur >= 0 ? evidence[(size_t) cur] : 0.0f;
@@ -366,7 +409,7 @@ private:
         const bool overdue = ! profile.lowRegister && (double) candFrames * hopC >= beatSamples;   // bass register: passing tones must not force a change
         if (candFrames >= need && (overdue || evidence[(size_t) top] > curE * (1.0f + params.hysteresis))) {
             chord = { top / NumChordTypes, top % NumChordTypes, -1, evidence[(size_t) top] };
-            chord.bass = bassPc >= 0 && chordContains (chord.root, chord.type, bassPc) ? bassPc : chord.root;
+            std::fill (bassCnt.begin(), bassCnt.end(), 0); bassFrames = 0; countBass (bassPc); chord.bass = settledBass (chord);
             chordChangedAt = end; candidate = -1; candFrames = 0;
             return true;
         }
