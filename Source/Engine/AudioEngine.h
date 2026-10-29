@@ -68,6 +68,7 @@ public:
     std::atomic<int> style { 0 };
     std::atomic<float> fallbackBpm { 100 };          // band tempo until a count-in locks
     std::atomic<bool> monitorGuitar { true };
+    std::atomic<bool> placeholderDrive { false };   // tanh(4x) soft-clip ahead of the inserts: OFF by default (clean DI until the player asks for it)
     std::atomic<float> guitarGain { 1.0f }, masterGain { 0.8f };
     std::atomic<int> instrument { (int) InputInstrument::BassVI }, tuning { (int) Tuning::Standard };
     std::atomic<float> customCents { 0 };

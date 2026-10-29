@@ -1,8 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 FtheBand contributors
 #include "MainComponent.h"
+#include <set>
 #include "Util/ProcStats.h"
 #include "Net/SamplePacks.h"
+#include "Setup/FirstRunSetup.h"
 using namespace sj;
 
 #ifndef FTHEBAND_DISPLAY_VERSION
@@ -16,8 +18,43 @@ using namespace sj;
 #endif
 
 namespace {
-const juce::Colour bg (0xff15171c), panel (0xff1f232a), panel2 (0xff2a2e36), accent (0xffe8a33d), textDim (0xffa0a6b0);
-juce::Font font (float h, bool bold = false) { return juce::Font (juce::FontOptions (h, bold ? juce::Font::bold : juce::Font::plain)); }
+// Palette. Default = the original dark-blue look; the optional "FtheBand page" skin (UI/PageSkin.h) swaps these (setSkin).
+juce::Colour bg (0xff15171c), panel (0xff1f232a), panel2 (0xff2a2e36), accent (0xffe8a33d), textDim (0xffa0a6b0), ink (0xffffffff),
+             barCol (0xff5aa9e6), okCol (juce::Colours::limegreen);   // chroma bars / "armed" text, and the good-level meter / "PLAYING" text
+float panelCorner = 10.0f, fontScale = 1.0f;   // the serif looks smaller than the default sans at the same height
+juce::Typeface::Ptr skinSerif, skinSerifBold;   // set only while the page skin is on
+juce::Font font (float h, bool bold = false) {
+    if (skinSerif != nullptr) return juce::Font (juce::FontOptions (bold ? skinSerifBold : skinSerif).withHeight (h * fontScale));
+    return juce::Font (juce::FontOptions (h, bold ? juce::Font::bold : juce::Font::plain));
+}
+struct Pal { juce::Colour bg, panel, panel2, accent, textDim, ink; float scale; };
+Pal currentPal() { return { bg, panel, panel2, accent, textDim, ink, fontScale }; }
+void applyPalette (bool page) {
+    if (page) { bg = juce::Colour (0xff070707); panel = juce::Colour (0xff101010); panel2 = juce::Colour (0xff1c1c1c);
+                accent = juce::Colour (0xffff2a2a); textDim = juce::Colour (0xff8a8276); ink = juce::Colour (0xfff4eee4); panelCorner = 0.0f;
+                barCol = juce::Colour (0xffc9b896); okCol = juce::Colour (0xffffb020); fontScale = 1.12f; }
+    else      { bg = juce::Colour (0xff15171c); panel = juce::Colour (0xff1f232a); panel2 = juce::Colour (0xff2a2e36);
+                accent = juce::Colour (0xffe8a33d); textDim = juce::Colour (0xffa0a6b0); ink = juce::Colour (0xffffffff); panelCorner = 10.0f;
+                barCol = juce::Colour (0xff5aa9e6); okCol = juce::Colours::limegreen; fontScale = 1.0f; }
+}
+/** After a live skin switch: labels / links keep their explicit colours and fonts, so re-map the palette ones. */
+void restyleTree (juce::Component& c, const Pal& a, const Pal& b, std::set<juce::Component*>& done) {
+    auto remap = [&] (juce::Colour x) { return x == a.ink ? b.ink : x == a.textDim ? b.textDim : x == a.accent ? b.accent : x; };
+    for (auto* ch : c.getChildren()) {
+        if (! done.insert (ch).second) continue;   // the showing tab is reachable twice
+        if (auto* l = dynamic_cast<juce::Label*> (ch)) {
+            { const auto old = l->findColour (juce::Label::textColourId); if (remap (old) != old) l->setColour (juce::Label::textColourId, remap (old)); }   // only explicit palette colours; tabs not showing have no LookAndFeel to ask
+            const auto f = l->getFont(); l->setFont (font (f.getHeight() / a.scale, f.isBold()));
+        }
+        if (auto* h = dynamic_cast<juce::HyperlinkButton*> (ch)) { { const auto old = h->findColour (juce::HyperlinkButton::textColourId); if (remap (old) != old) h->setColour (juce::HyperlinkButton::textColourId, remap (old)); } 
+            const double fh = (double) h->getProperties().getWithDefault ("sjLinkSize", 0.0);   // set where a link has its own fixed font; 0 = About-page style (underlined, resizes)
+            if (fh > 0) h->setFont (font ((float) fh), false, juce::Justification::centredLeft);
+            else        { auto lf = b.scale > 1.0f ? font (14.0f) : juce::Font (juce::FontOptions { 14.0f, juce::Font::underlined });
+                          if (b.scale > 1.0f) lf.setUnderline (true);
+                          h->setFont (lf, true, juce::Justification::left); } }
+        restyleTree (*ch, a, b, done);
+    }
+}
 const juce::StringArray styleNames { "Rock", "Funk", "Blues", "Ballad" };
 const char* bandStateName (int s) { return s == 1 ? "Playing" : s == 2 ? "Fading out" : s == 3 ? "Counting in" : s == 4 ? "Ending (ringing out)" : "Out"; }
 
@@ -38,7 +75,7 @@ struct MainComponent::Page : juce::Viewport {
     std::unique_ptr<Content> content; int mw, mh;
 };
 
-static void styleLabel (juce::Label& l, float h = 15.0f, juce::Colour c = juce::Colours::white)
+static void styleLabel (juce::Label& l, float h = 15.0f, juce::Colour c = ink)
 { l.setFont (font (h)); l.setColour (juce::Label::textColourId, c); }
 
 // ================================================================================================ Jam
@@ -111,14 +148,14 @@ struct JamPage : Content {
         const int bs = m.usePreview ? 0 : e.bandState.load(); const auto ph = m.usePreview ? AudioEngine::Phase::Listening : e.phase();
         const bool button = e.startMode.load() == 1;
         col = juce::Colour (0xff9aa3ad);
-        if (bs == 1) { col = juce::Colours::limegreen; return "Band: PLAYING"; }
+        if (bs == 1) { col = okCol; return "Band: PLAYING"; }
         if (bs == 2) { col = juce::Colours::orange; return "Band: fading out - play to bring it back"; }
         if (bs == 3) { col = juce::Colours::yellow; return "Band: counting in..."; }
         if (bs == 4) { col = juce::Colours::orange; return "Band: ending"; }
         if (ph == AudioEngine::Phase::Idle) return "Band: stopped";
         if (ph == AudioEngine::Phase::Learning) return "Band: learning noise - don't play";
         if (button) { if (e.bandStartReq.load()) { col = juce::Colours::yellow; return "Band: starting..."; } return "Band: ready - press Start band"; }
-        col = juce::Colour (0xff5aa9e6); return "Band: ARMED - waiting for you";
+        col = barCol; return "Band: ARMED - waiting for you";
     }
     void syncFromEngine() {
         startMode.setSelectedId (e.startMode.load() + 1, juce::dontSendNotification); clickIn.setToggleState (e.countInClick.load(), juce::dontSendNotification);
@@ -167,13 +204,13 @@ struct JamPage : Content {
         g.fillAll (bg);
         const auto& s = st();
         // ---- chord panel
-        g.setColour (panel); g.fillRoundedRectangle (chordArea.toFloat(), 10);
+        g.setColour (panel); g.fillRoundedRectangle (chordArea.toFloat(), panelCorner);
         auto a = chordArea.reduced (20, 14);
         const auto t = (Tuning) e.tuning.load(); const float c = e.customCents.load();
         g.setColour (textDim); g.setFont (font (15)); g.drawText ("CHORD (sounding)", a.removeFromTop (20), juce::Justification::left);
         g.setColour (s.chord.valid() ? accent : textDim); g.setFont (font (88, true));
         g.drawText (s.chord.valid() ? juce::String (s.chord.name()) : juce::String ("--"), a.removeFromTop (100), juce::Justification::left);
-        g.setColour (juce::Colours::white); g.setFont (font (18));
+        g.setColour (ink); g.setFont (font (18));
         juce::String shape = "--";
         if (s.chord.valid()) { shape = noteName (fingeredPc (s.chord.root, t, c)); shape << chordSuffix (s.chord.type); }
         g.drawText ("Shape as fingered (" + tuningNames()[(int) t] + "): " + shape, a.removeFromTop (28), juce::Justification::left);
@@ -185,30 +222,30 @@ struct JamPage : Content {
                            : s.countIn ? "Listening - count in (4 hits) or just play" : "Jamming";
         g.setColour (textDim); g.drawText ("Session: " + phase + "    Band: " + bandStateName (m.usePreview ? 1 : e.bandState.load()), a.removeFromTop (28), juce::Justification::left);
         // ---- chroma
-        g.setColour (panel); g.fillRoundedRectangle (chromaArea.toFloat(), 10);
+        g.setColour (panel); g.fillRoundedRectangle (chromaArea.toFloat(), panelCorner);
         auto ca = chromaArea.reduced (14, 12);
         g.setColour (textDim); g.setFont (font (14)); g.drawText ("Pitch classes (sounding)", ca.removeFromTop (18), juce::Justification::left);
         auto lab = ca.removeFromBottom (18); const float w = (float) ca.getWidth() / 12.0f;
         for (int i = 0; i < 12; ++i) {
             auto bar = juce::Rectangle<float> ((float) ca.getX() + (float) i * w + 3, (float) ca.getY() + 4, w - 6, (float) ca.getHeight() - 4);
             g.setColour (panel2); g.fillRect (bar);
-            g.setColour (i == s.chord.root ? accent : juce::Colour (0xff5aa9e6));
+            g.setColour (i == s.chord.root ? accent : barCol);
             g.fillRect (bar.removeFromBottom (bar.getHeight() * juce::jlimit (0.0f, 1.0f, s.chroma[(size_t) i])));
             g.setColour (juce::Colours::lightgrey); g.drawText (noteName (i), juce::Rectangle<float> ((float) lab.getX() + (float) i * w, (float) lab.getY(), w, 18), juce::Justification::centred);
         }
         // ---- input meter with gate marker, mic meter under it
-        g.setColour (panel); g.fillRoundedRectangle (meterArea.toFloat(), 8);
+        g.setColour (panel); g.fillRoundedRectangle (meterArea.toFloat(), panelCorner * 0.8f);
         auto all = meterArea.reduced (10, 6);
         auto meter = [&] (juce::Rectangle<int> ma, const juce::String& name, float db, bool on, float gate) {
             auto lbl = ma.removeFromLeft (150);
             auto x = [&] (float d) { return (float) ma.getX() + (float) ma.getWidth() * juce::jlimit (0.0f, 1.0f, (d + 72.0f) / 72.0f); };
             g.setColour (panel2); g.fillRect (ma);
             if (on) {
-                g.setColour (db > -3 ? juce::Colours::red : db > -12 ? juce::Colours::orange : juce::Colours::limegreen);
+                g.setColour (db > -3 ? juce::Colours::red : db > -12 ? juce::Colours::orange : okCol);
                 g.fillRect (juce::Rectangle<float> ((float) ma.getX(), (float) ma.getY(), x (db) - (float) ma.getX(), (float) ma.getHeight()));
                 if (gate > -100) { g.setColour (juce::Colours::white); g.fillRect (x (gate) - 1, (float) ma.getY() - 2, 2.0f, (float) ma.getHeight() + 4); }
             }
-            g.setColour (on ? juce::Colours::white : textDim); g.setFont (font (14));
+            g.setColour (on ? ink : textDim); g.setFont (font (14));
             g.drawText (on ? name + " " + juce::String (db, 1) + " dB" : name + " (no device)", lbl, juce::Justification::left);
         };
         const float db = m.usePreview ? -18.0f : juce::Decibels::gainToDecibels (e.inputPeak.load(), -72.0f);
@@ -258,7 +295,7 @@ struct BandPage : Content {
         Card() { for (auto* c : std::initializer_list<juce::Component*> { &title, &type, &role, &gain, &mute, &solo, &remove }) addAndMakeVisible (c);
                  type.addItemList (chairTypeNames(), 1); role.addItemList (chairRoleNames(), 1); gain.setRange (0, 1.5, 0.01);
                  gain.setTextBoxStyle (juce::Slider::TextBoxRight, false, 48, 20); gain.setTextValueSuffix (" gain"); gain.setTextBoxStyle (juce::Slider::TextBoxRight, false, 72, 20); styleLabel (title, 17); title.setFont (font (17, true)); }
-        void paint (juce::Graphics& g) override { g.setColour (panel); g.fillRoundedRectangle (getLocalBounds().toFloat(), 10); }
+        void paint (juce::Graphics& g) override { g.setColour (panel); g.fillRoundedRectangle (getLocalBounds().toFloat(), panelCorner); }
         void resized() override {
             auto r = getLocalBounds().reduced (12, 10);
             title.setBounds (r.removeFromTop (26)); r.removeFromTop (4);
@@ -338,23 +375,26 @@ struct BandPage : Content {
 // ================================================================================================ Inserts
 struct InsertsPage : Content {
     AudioEngine& e; PluginLibrary& lib;
-    PluginSlotsPanel slots; juce::TextButton scan { "Plug-ins..." }; juce::Label help, help2, latency;
+    PluginSlotsPanel slots; juce::TextButton scan { "Plug-ins..." }; juce::ToggleButton drive { "Placeholder drive (distortion)" }; juce::Label help, help2, latency;
     std::function<void()> onChanged;
     InsertsPage (AudioEngine& en, PluginLibrary& l) : e (en), lib (l), slots (en.plugins) {
-        for (auto* c : std::initializer_list<juce::Component*> { &slots, &scan, &help, &help2, &latency }) addAndMakeVisible (c);
+        for (auto* c : std::initializer_list<juce::Component*> { &slots, &scan, &drive, &help, &help2, &latency }) addAndMakeVisible (c);
+        drive.setToggleState (e.placeholderDrive.load(), juce::dontSendNotification);
+        drive.setTooltip ("Soft-clip distortion ahead of the inserts. Off = clean guitar; turn on only if you have no amp sim loaded.");
+        drive.onClick = [this] { e.placeholderDrive = drive.getToggleState(); };
         styleLabel (help, 14, textDim); styleLabel (help2, 14, textDim); styleLabel (latency, 15);
         help2.setJustificationType (juce::Justification::topLeft);
         help2.setText ("Inserts run inside the audio callback on the same samples (no extra buffer of delay); only a plug-in's own reported\n"
                        "latency adds to what you hear. Recorded stems are delay-compensated: DI, band and mic are shifted to line up with GuitarFX.",
                        juce::dontSendNotification);
-        help.setText ("Four VST3 inserts on the input (after the placeholder drive, before the GuitarFX stem). The DI stem is always recorded dry.",
+        help.setText ("Four VST3 inserts on the input (after the optional placeholder drive - off by default - before the GuitarFX stem). The DI stem is always recorded dry.",
                       juce::dontSendNotification);
         scan.onClick = [this] { lib.showScanner(); };
         slots.refresh();
     }
     void resized() override {
         auto r = getLocalBounds().reduced (16);
-        auto row = r.removeFromTop (32); scan.setBounds (row.removeFromLeft (140)); row.removeFromLeft (16); latency.setBounds (row);
+        auto row = r.removeFromTop (32); scan.setBounds (row.removeFromLeft (140)); row.removeFromLeft (16); drive.setBounds (row.removeFromLeft (250)); row.removeFromLeft (16); latency.setBounds (row);
         r.removeFromTop (8); help.setBounds (r.removeFromTop (24)); r.removeFromTop (8);
         slots.setBounds (r.removeFromTop (4 * 30 + 8).removeFromLeft (720));
         r.removeFromTop (8); help2.setBounds (r.removeFromTop (40).removeFromLeft (900));
@@ -379,9 +419,11 @@ struct AudioPage : Content {
     juce::ComboBox splitBox; juce::Label autoSplit { {}, "Optional, off by default. If your guitar input and output are different physical devices inside ASIO4ALL, their clocks drift (static after a while) unless you use split input." };
     juce::TextButton panelBtn { "Driver control panel" };
     juce::TextButton rescan { "Rescan" };
+    juce::Label inputWhy; juce::TextButton fixBtn;   // why the guitar has no input + one-click fix (or "input OK")
+    int fixId = 0;
     juce::ToggleButton builtin { "Low latency (built-in, no ASIO needed)" };
     juce::Label builtinStat, asioHelp, asioTm;
-    juce::TextButton installFlex { "Install FlexASIO (free ASIO driver)" };
+    juce::TextButton installFlex { "Setup check (ASIO drivers, sounds)..." };
     juce::HyperlinkButton asio4allLink { "Get ASIO4ALL (asio4all.org)", juce::URL ("https://asio4all.org") },
                           flexLink { "FlexASIO on GitHub", juce::URL ("https://github.com/dechamps/FlexASIO") };
     juce::String builtinMsg;
@@ -390,8 +432,10 @@ struct AudioPage : Content {
     juce::ComboBox bufBox, micBox;
     juce::Slider trim { juce::Slider::LinearHorizontal, juce::Slider::TextBoxRight };
     explicit AudioPage (MainComponent& mc) : m (mc), sel (mc.deviceManager, 1, 1, 2, 2, false, false, false, false) {
-        for (auto* c : std::initializer_list<juce::Component*> { &sel, &dev, &splitL, &splitStat, &splitBox, &autoSplit, &rescan, &panelBtn,
+        for (auto* c : std::initializer_list<juce::Component*> { &sel, &dev, &inputWhy, &fixBtn, &splitL, &splitStat, &splitBox, &autoSplit, &rescan, &panelBtn,
                                                                   &builtin, &builtinStat, &asioHelp, &asioTm, &installFlex, &asio4allLink, &flexLink, &lowLat, &bufL, &micL, &trimL, &bufHint, &micStat, &bufBox, &micBox, &trim }) addAndMakeVisible (c);
+        styleLabel (inputWhy, 13); inputWhy.setJustificationType (juce::Justification::topLeft);
+        fixBtn.onClick = [this] { if (fixId != 0) { m.applyInputFix (fixId); m.saveSession(); refresh(); tick(); } };
         styleLabel (dev, 14, textDim); styleLabel (splitL, 15); styleLabel (splitStat, 14, textDim);
         styleLabel (bufL, 14); styleLabel (micL, 15); styleLabel (trimL, 14); styleLabel (bufHint, 13, textDim); styleLabel (micStat, 14, textDim);
         micStat.setJustificationType (juce::Justification::topLeft);
@@ -399,20 +443,12 @@ struct AudioPage : Content {
         styleLabel (asioHelp, 13, textDim); asioHelp.setJustificationType (juce::Justification::topLeft);
         styleLabel (asioTm, 12, textDim); asioTm.setJustificationType (juce::Justification::topLeft);
         asioHelp.setText ("No ASIO driver? Tick \"Low latency (built-in)\" on the right: it uses Windows' own exclusive audio mode, nothing to install.\n"
-                          "Prefer a real ASIO driver? ASIO4ALL is free from https://asio4all.org (not included). FlexASIO (free, MIT licence) is included: "
-                          "the button below runs its installer only when you click it. Restart FtheBand after installing.", juce::dontSendNotification);
+                          "Prefer a real ASIO driver? ASIO4ALL is free from https://asio4all.org (FtheBand only opens the page; it never installs it). FlexASIO (free, MIT licence) "
+                          "can be downloaded from its official GitHub release by the button below, only after you confirm. Restart FtheBand after installing.", juce::dontSendNotification);
         asioTm.setText ("ASIO is a trademark of Steinberg Media Technologies GmbH. FtheBand is not ASIO-certified and is not endorsed by or affiliated with Steinberg.", juce::dontSendNotification);
-        for (auto* l : { &asio4allLink, &flexLink }) { l->setColour (juce::HyperlinkButton::textColourId, accent); l->setFont (font (13), false, juce::Justification::centredLeft); }
-        installFlex.setEnabled (MainComponent::flexAsioInstaller().existsAsFile());
-        installFlex.setTooltip (installFlex.isEnabled() ? "Runs the bundled FlexASIO installer (drivers\\FlexASIO). Nothing is installed unless you finish it."
-                                                        : "The FlexASIO installer is not next to this FtheBand.exe (drivers\\FlexASIO). Download it from the FlexASIO link.");
-        installFlex.onClick = [this] {
-            const auto f = MainComponent::flexAsioInstaller();
-            if (! f.existsAsFile()) { juce::AlertWindow::showMessageBoxAsync (juce::MessageBoxIconType::InfoIcon, "FlexASIO installer not found", "Download it from https://github.com/dechamps/FlexASIO/releases"); return; }
-            juce::AlertWindow::showOkCancelBox (juce::MessageBoxIconType::QuestionIcon, "Install FlexASIO?",
-                "This starts the FlexASIO installer (MIT licence, github.com/dechamps/FlexASIO). Windows will ask for permission, and nothing is installed unless you finish the installer. Restart FtheBand afterwards to see the new ASIO device.",
-                "Run installer", "Cancel", this, juce::ModalCallbackFunction::create ([f] (int r) { if (r == 1) f.startAsProcess(); }));
-        };
+        for (auto* l : { &asio4allLink, &flexLink }) { l->setColour (juce::HyperlinkButton::textColourId, accent); l->setFont (font (13), false, juce::Justification::centredLeft); l->getProperties().set ("sjLinkSize", 13.0); }
+        installFlex.setTooltip ("Checks what this PC has (ASIO drivers, band sounds, guitar cable) and lists it. Nothing is downloaded or installed unless you click a button in that window.");
+        installFlex.onClick = [this] { m.showSetupDialog(); };
         builtin.onClick = [this] {
             const bool on = builtin.getToggleState();
             builtinStat.setText ("Opening...", juce::dontSendNotification);
@@ -475,6 +511,14 @@ struct AudioPage : Content {
             bufBox.setSelectedId (d->getCurrentBufferSizeSamples(), juce::dontSendNotification);
         }
     }
+    /** JUCE's own "Audio device type" box only follows change messages; make it always show the type of the device that is really open. */
+    void syncTypeCombo() {
+        const auto type = m.deviceManager.getCurrentAudioDeviceType();
+        if (type.isEmpty() || m.deviceManager.getCurrentAudioDevice() == nullptr) return;
+        for (auto* c : sel.getChildren())
+            if (auto* cb = dynamic_cast<juce::ComboBox*> (c))
+                if (cb->getText() != type) cb->setText (type, juce::dontSendNotification);
+    }
     void choose() {
         const int id = splitBox.getSelectedId(); if (id <= 0) return;
         if (id == 1) m.closeSplitInput();
@@ -482,6 +526,11 @@ struct AudioPage : Content {
         m.saveSession(); refresh();
     }
     void tick() override {
+        syncTypeCombo();
+        { auto is = m.inputIssue();
+          inputWhy.setText (is.text, juce::dontSendNotification);
+          inputWhy.setColour (juce::Label::textColourId, is.ok ? textDim : juce::Colour (0xffe8a23c));
+          fixId = is.fix; fixBtn.setButtonText (is.action); fixBtn.setVisible (is.fix != 0); }
         splitStat.setText (m.splitStatus + "\n" + m.latencyText (false), juce::dontSendNotification);
         juce::String t;
         if (m.micDevice.isEmpty()) t = "Microphone: off";
@@ -500,7 +549,9 @@ struct AudioPage : Content {
         asioTm.setBounds (left.removeFromBottom (30)); left.removeFromBottom (4);
         auto lrow = left.removeFromBottom (26); installFlex.setBounds (lrow.removeFromLeft (250)); lrow.removeFromLeft (10);
         asio4allLink.setBounds (lrow.removeFromLeft (190)); flexLink.setBounds (lrow.removeFromLeft (150)); left.removeFromBottom (6);
-        asioHelp.setBounds (left.removeFromBottom (66)); left.removeFromBottom (8);
+        asioHelp.setBounds (left.removeFromBottom (58)); left.removeFromBottom (6);
+        { auto strip = left.removeFromBottom (64); fixBtn.setBounds (strip.removeFromRight (190).removeFromTop (28)); strip.removeFromRight (8);
+          inputWhy.setBounds (strip); left.removeFromBottom (4); }
         sel.setBounds (left);
         builtin.setBounds (r.removeFromTop (26)); builtinStat.setBounds (r.removeFromTop (52)); r.removeFromTop (10);
         splitL.setBounds (r.removeFromTop (24)); r.removeFromTop (6);
@@ -583,7 +634,7 @@ struct SoundsPage : Content, juce::ListBoxModel {
         if (row < 0 || row >= (int) packs.size()) return;
         auto& p = packs[(size_t) row];
         if (sel) g.fillAll (accent.withAlpha (0.35f));
-        g.setColour (juce::Colours::white); g.setFont (font (15, true));
+        g.setColour (ink); g.setFont (font (15, true));
         g.drawText (p.name, 10, 0, w - 260, h, juce::Justification::centredLeft, true);
         g.setColour (textDim); g.setFont (font (13));
         g.drawText (p.licence + "  " + SamplePacks::formatSize (p.size) + (SamplePacks::isBundled (p.id) ? "  [installed, bundled]" : SamplePacks::isInstalled (p.id) ? "  [installed]" : ""),
@@ -624,9 +675,14 @@ struct SoundsPage : Content, juce::ListBoxModel {
 
 // ================================================================================================ About
 struct AboutPage : Content {
-    juce::Label title, body, packCredits; juce::HyperlinkButton licence, source, donate; juce::String lastCredits = "-";
-    explicit AboutPage (const juce::String& donateUrl) {
-        for (auto* c : std::initializer_list<juce::Component*> { &title, &body, &licence, &packCredits }) addAndMakeVisible (c);
+    juce::Label title, body, packCredits, skinLabel; juce::ComboBox skinBox; juce::HyperlinkButton licence, source, donate; juce::String lastCredits = "-";
+    MainComponent& owner;
+    explicit AboutPage (MainComponent& mc, const juce::String& donateUrl) : owner (mc) {
+        for (auto* c : std::initializer_list<juce::Component*> { &title, &body, &licence, &packCredits, &skinLabel, &skinBox }) addAndMakeVisible (c);
+        // Look (default / FtheBand page skin): the app has no Settings tab, so the switch lives here. Applies at once and is saved.
+        styleLabel (skinLabel, 14, textDim); skinLabel.setText ("Look:", juce::dontSendNotification); skinLabel.setJustificationType (juce::Justification::centredRight);
+        skinBox.addItem ("Default", 1); skinBox.addItem ("FtheBand page (optional skin)", 2); skinBox.setSelectedId (mc.getSkin() == 1 ? 2 : 1, juce::dontSendNotification);
+        skinBox.onChange = [this, &mc] { mc.setSkin (skinBox.getSelectedId() == 2 ? 1 : 0); };
         styleLabel (packCredits, 13); packCredits.setJustificationType (juce::Justification::topLeft); packCredits.setMinimumHorizontalScale (1.0f);
         styleLabel (title, 28); title.setFont (font (28, true));
         title.setText (juce::String ("FtheBand ") + FTHEBAND_DISPLAY_VERSION, juce::dontSendNotification);
@@ -640,8 +696,8 @@ struct AboutPage : Content {
                       "(creativecommons.org/licenses/by/3.0). Trimmed and resampled for FtheBand.\n"
                       "Drum, cymbal and bass samples: Karoryfer Samples (Gogodze Phu Vol. II, Black And Blue Basses) and\n"
                       "Versilian Studios (VCSL), CC0. Full list: CREDITS.md. Sound packs bundled in samples/packs are listed below.\n\n"
-                      "The release zip also carries the optional FlexASIO installer (MIT licence, github.com/dechamps/FlexASIO); it is never installed\n"
-                      "automatically. Licences of FlexASIO and the libraries it contains: THIRD-PARTY-NOTICES.md.\n"
+                      "FtheBand contains no third-party installers. The optional FlexASIO driver (MIT licence, github.com/dechamps/FlexASIO) is only downloaded\n"
+                      "from its official GitHub release if you ask for it in the Setup check. Licences of FlexASIO and its libraries: THIRD-PARTY-NOTICES.md.\n"
                       "ASIO is a trademark and software of Steinberg Media Technologies GmbH. FtheBand is not ASIO-certified and is not endorsed by Steinberg.",
                       juce::dontSendNotification);
         licence.setButtonText ("GNU AGPL v3 licence text"); licence.setURL (juce::URL ("https://www.gnu.org/licenses/agpl-3.0.html"));
@@ -652,13 +708,15 @@ struct AboutPage : Content {
     }
     void resized() override {
         auto r = getLocalBounds().reduced (24);
-        title.setBounds (r.removeFromTop (40)); r.removeFromTop (8); body.setBounds (r.removeFromTop (330));
+        auto row = r.removeFromTop (40); skinBox.setBounds (row.removeFromRight (260).reduced (0, 6)); skinLabel.setBounds (row.removeFromRight (60)); title.setBounds (row);
+        r.removeFromTop (8); body.setBounds (r.removeFromTop (330));
         licence.setBounds (r.removeFromTop (26).removeFromLeft (400)); source.setBounds (r.removeFromTop (26).removeFromLeft (700));
         r.removeFromTop (10); donate.setBounds (r.removeFromTop (30).removeFromLeft (120));
         r.removeFromTop (6); packCredits.setBounds (r);
     }
     int ticks = 0;
     void tick() override {   // CC-BY credits for downloaded packs (re-read ~1 Hz while visible)
+        const int want = owner.getSkin() == 1 ? 2 : 1; if (skinBox.getSelectedId() != want) skinBox.setSelectedId (want, juce::dontSendNotification);
         if (ticks++ % 30 != 0) return;
         auto c = SamplePacks::attributionText();
         if (c != lastCredits) { lastCredits = c; packCredits.setText (c.isEmpty() ? juce::String() : "Sound packs, bundled and downloaded (CC-BY credits are required; CC0 credited as a courtesy):\n" + c, juce::dontSendNotification); }
@@ -679,6 +737,7 @@ MainComponent::MainComponent (bool openAudio) : audioOpen (openAudio)
 {
     donateUrl = FTHEBAND_DONATE_URL;
     if (audioOpen) loadSession();
+    if (skin == 1) enableSkinGlobals (true);   // before the pages exist, so they are built with the skin's fonts and colours
     tabs.setTabBarDepth (34); tabs.setOutline (0);
     auto add = [this] (const juce::String& name, Content* c, int mw, int mh) {
         auto* p = pages.add (new Page (std::unique_ptr<Content> (c), mw, mh)); tabs.addTab (name, panel, p, false); };
@@ -689,7 +748,7 @@ MainComponent::MainComponent (bool openAudio) : audioOpen (openAudio)
     auto* ins = new InsertsPage (engine, pluginLibrary); add ("Inserts", ins, 800, 260);
     add ("Audio", new AudioPage (*this), 1150, 690);
     add ("Get more sounds", new SoundsPage (engine), 1200, 600);
-    add ("About", new AboutPage (donateUrl), 900, 640);
+    add ("About", new AboutPage (*this, donateUrl), 900, 640);
     addAndMakeVisible (tabs); addAndMakeVisible (statusBar); styleLabel (statusBar, 13, textDim);
 
     if (audioOpen) {
@@ -704,14 +763,45 @@ MainComponent::MainComponent (bool openAudio) : audioOpen (openAudio)
         ins->slots.onChainChanged = [this] { saveSession(); };
         deviceManager.addChangeListener (this);
         changeListenerCallback (nullptr);
+        juce::Timer::callAfterDelay (1500, [sp = juce::Component::SafePointer<MainComponent> (this)] { if (sp != nullptr) sp->maybeShowSetupAtStart(); });
     }
+    if (skin == 1) { setLookAndFeel (skinLnf.get()); for (int i = 0; i < tabs.getNumTabs(); ++i) tabs.setTabBackgroundColour (i, panel);
+                     { std::set<juce::Component*> done; for (auto* pg : pages) { done.insert (pg); restyleTree (*pg, currentPal(), currentPal(), done); } restyleTree (*this, currentPal(), currentPal(), done); } }   // hyperlinks keep a plain default font otherwise
     setSize (LogicalW, LogicalH);
     startTimerHz (30);
 }
 
+/** Palette + embedded OFL fonts (Source Serif 4, JetBrains Mono; see THIRD-PARTY-NOTICES.md) for the page skin, or back to the defaults. */
+void MainComponent::enableSkinGlobals (bool page)
+{
+    applyPalette (page);
+    if (page) {
+        auto tf = [] (const char* d, int n) { return juce::Typeface::createSystemTypefaceFor (d, (size_t) n); };
+        skinSerif = tf (BinaryData::SourceSerif4Regular_ttf, BinaryData::SourceSerif4Regular_ttfSize);
+        skinSerifBold = tf (BinaryData::SourceSerif4Bold_ttf, BinaryData::SourceSerif4Bold_ttfSize);
+        if (skinLnf == nullptr)
+            skinLnf = std::make_unique<sj::PageSkin> (skinSerif, skinSerifBold, tf (BinaryData::JetBrainsMonoRegular_ttf, BinaryData::JetBrainsMonoRegular_ttfSize),
+                                                      tf (BinaryData::JetBrainsMonoBold_ttf, BinaryData::JetBrainsMonoBold_ttfSize));
+    } else { skinSerif = nullptr; skinSerifBold = nullptr; }
+}
+
+void MainComponent::setSkin (int newSkin)
+{
+    newSkin = newSkin == 1 ? 1 : 0;
+    if (newSkin == skin) return;
+    const auto before = currentPal();
+    skin = newSkin; enableSkinGlobals (skin == 1);
+    setLookAndFeel (skin == 1 ? skinLnf.get() : nullptr);
+    for (int i = 0; i < tabs.getNumTabs(); ++i) tabs.setTabBackgroundColour (i, panel);
+    { std::set<juce::Component*> done; for (auto* pg : pages) { done.insert (pg); restyleTree (*pg, before, currentPal(), done); } restyleTree (*this, before, currentPal(), done); }   // tabs that are not showing are not children yet
+    if (auto* w = getTopLevelComponent()) if (auto* dw = dynamic_cast<juce::DocumentWindow*> (w)) dw->setBackgroundColour (windowBackground (skin));
+    sendLookAndFeelChange(); resized(); repaint();
+    if (audioOpen) saveSession();
+}
+
 MainComponent::~MainComponent()
 {
-    stopTimer();
+    stopTimer(); setLookAndFeel (nullptr);
     if (audioOpen) { saveSession(); deviceManager.removeChangeListener (this); split.reset(); mic.reset(); engine.setSplitInputActive (false); engine.setMicInputActive (false);
                      deviceManager.removeAudioCallback (&engine); }
 }
@@ -776,12 +866,18 @@ void MainComponent::setupAudioDevices()
     // No ASIO4ALL: the built-in low-latency mode (WASAPI exclusive -> low-latency shared -> plain shared, each only if the one before failed).
     // The guitar (default capture device) then runs as a split input on its own stream, drift-corrected against the output clock.
     juce::Array<int> ladder;
-    if (auto r = sj::devpolicy::openBuiltIn (deviceManager, true, true, lg, &ladder); r.ok) {
+    // sharedWithInput = false: the guitar cable and the speakers are different devices on different clocks, so the guitar is ALWAYS a
+    // drift-corrected split input here (a combined shared device, or an output-only fallback with no input at all, left a fresh laptop deaf).
+    if (auto r = sj::devpolicy::openBuiltIn (deviceManager, true, false, lg, &ladder); r.ok) {
         logEvent ("startup audio: " + r.how);
-        if (r.type != sj::devpolicy::SharedType && r.input.isEmpty()) {
-            if (auto* sh = findType (sj::devpolicy::SharedType))
-                if (auto in = sj::devpolicy::defaultInputName (*sh); in.isNotEmpty()) openSplitInput (sj::devpolicy::SharedType, in);
-            startBufferTuning (ladder);
+        if (r.input.isEmpty()) {
+            if (auto* sh = findType (sj::devpolicy::SharedType)) {
+                sh->scanForDevices();
+                logEvent ("capture devices: " + sh->getDeviceNames (true).joinIntoString (" | "));
+                if (auto in = sj::devpolicy::defaultInputName (*sh); in.isNotEmpty()) { logEvent ("guitar input picked: " + in); openSplitInput (sj::devpolicy::SharedType, in); }
+                else logEvent ("guitar input: no capture device found");
+            }
+            if (! ladder.isEmpty()) startBufferTuning (ladder);
         }
         return;
     }
@@ -826,7 +922,7 @@ juce::String MainComponent::setBuiltInLowLatency (bool on)
     juce::String msg = r.ok ? r.how : "Could not open any audio output: " + r.how;
     if (r.ok) {
         const bool lowLat = r.type != sj::devpolicy::SharedType;
-        if (lowLat || splitDevice.isNotEmpty()) {   // output-only device: the guitar is a split input
+        if (lowLat || splitDevice.isNotEmpty() || r.input.isEmpty()) {   // output-only device: the guitar is a split input
             if (in.isNotEmpty()) openSplitInput (sj::devpolicy::SharedType, in);
             if (lowLat) startBufferTuning (ladder);
         }
@@ -872,15 +968,35 @@ void MainComponent::tuneTick()
     }
 }
 
-/** Optional FlexASIO (MIT) installer shipped in drivers/FlexASIO next to FtheBand.exe. Only ever started from the button, after a confirm. */
-juce::File MainComponent::flexAsioInstaller()
+/** Setup check window: lists what this PC has / lacks; every download or install is a separate button the player must click (see Setup/FirstRunSetup.h). */
+void MainComponent::showSetupDialog()
 {
-    auto exeDir = juce::File::getSpecialLocation (juce::File::currentExecutableFile).getParentDirectory();
-    for (auto& d : { exeDir.getChildFile ("drivers").getChildFile ("FlexASIO"), exeDir.getParentDirectory().getChildFile ("drivers").getChildFile ("FlexASIO") }) {
-        auto found = d.findChildFiles (juce::File::findFiles, false, "FlexASIO-*.exe");
-        if (! found.isEmpty()) return found.getFirst();
-    }
-    return {};
+    if (setupWindow != nullptr) { setupWindow->toFront (true); return; }
+    auto names = [this] {
+        juce::StringArray n;
+        for (auto* t : deviceManager.getAvailableDeviceTypes())
+            if (t != nullptr && ! t->getTypeName().containsIgnoreCase ("ASIO")) n.addArray (t->getDeviceNames (true));
+        return n;
+    };
+    juce::DialogWindow::LaunchOptions o;
+    o.dialogTitle = "FtheBand setup check";
+    o.dialogBackgroundColour = juce::Colour (0xff1c1c22);
+    o.componentToCentreAround = this;
+    o.escapeKeyTriggersCloseButton = true; o.useNativeTitleBar = true; o.resizable = false; o.useBottomRightCornerResizer = false;
+    o.content.setOwned (new sj::setup::SetupPanel (names, [this] { if (setupWindow != nullptr) setupWindow->exitModalState (0); }));
+    setupWindow = o.launchAsync();
+}
+
+/** Once, shortly after the very first start: if anything optional is missing, show the setup check (it only lists; nothing is installed). */
+void MainComponent::maybeShowSetupAtStart()
+{
+    if (sj::setup::alreadySeen()) return;
+    juce::StringArray n;
+    for (auto* t : deviceManager.getAvailableDeviceTypes()) if (t != nullptr && ! t->getTypeName().containsIgnoreCase ("ASIO")) n.addArray (t->getDeviceNames (true));
+    const auto items = sj::setup::buildItems (sj::setup::detect (n));
+    sj::setup::markSeen (true);
+    logEvent ("setup check: " + juce::String (sj::setup::needsAttention (items) ? "items missing, showing the window" : "all fine"));
+    if (sj::setup::needsAttention (items)) showSetupDialog();
 }
 
 // ------------------------------------------------------------------------------------------------ split input
@@ -922,6 +1038,21 @@ bool MainComponent::openSplitInput (const juce::String& typeNameIn, const juce::
                               preferLowLatency ? lowLatencyTypeFor (*type) : nullptr);
     lastOutBlock = out->getCurrentBufferSizeSamples(); lastOutRate = out->getCurrentSampleRate();
     splitType = typeName; splitDevice = inName;
+    if (splitError.contains ("input runs at") && ! inRateRetry) {
+        // cable and output device run at different rates (e.g. headphones at 44.1 kHz, cable at 48 kHz). Move the OUTPUT (FtheBand's own
+        // stream, not the Windows setting) to the cable's rate when it supports it, then open the cable again.
+        const double inRate = splitError.fromFirstOccurrenceOf ("input runs at ", false, false).getDoubleValue();
+        bool can = false;
+        for (double r : out->getAvailableSampleRates()) if (std::abs (r - inRate) < 1.0) can = true;
+        if (can && inRate > 0) {
+            logEvent ("rate mismatch: cable " + juce::String (inRate, 0) + " Hz, output " + juce::String (out->getCurrentSampleRate(), 0) + " Hz -> moving the output to " + juce::String (inRate, 0) + " Hz");
+            { const juce::ScopedValueSetter<bool> svs (reconfiguring, true);
+              auto s2 = deviceManager.getAudioDeviceSetup(); s2.sampleRate = inRate;
+              deviceManager.setAudioDeviceSetup (s2, true); }
+            const juce::ScopedValueSetter<bool> rr (inRateRetry, true);
+            return openSplitInput (typeNameIn, inName);
+        }
+    }
     logEvent ("open split input " + inName + " | output " + deviceSummary()
               + (splitError.isEmpty() ? " | OK as " + split->typeName
                                         + (preferLowLatency ? (split->lowLatencyFallback.isEmpty() ? (split->typeName.contains ("Low Latency") ? " (low-latency mode)" : " (low-latency mode not offered)")
@@ -1052,6 +1183,70 @@ void MainComponent::maybeAutoSplit()
 juce::File MainComponent::driftLogFile()
 { return juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory).getChildFile ("Ftheband").getChildFile ("drift.log"); }
 
+MainComponent::InputIssue MainComponent::inputIssue() const
+{
+    InputIssue r;
+    auto* d = deviceManager.getCurrentAudioDevice();
+    if (usePreview && previewIssue > 0) {   // --screens: show each message
+        r.fix = 1; r.action = "Use the cable through ASIO4ALL";
+        r.text = "No guitar input is open. The cable (" + juce::String ("Microphone (Rocksmith USB Guitar Adapter)") + ") can't open on its own because ASIO4ALL holds it exclusively (it is enabled in the ASIO4ALL panel). "
+                 "Greyed entries in \"Active input channels\" are just unticked: click the box. Or untick the cable in the ASIO4ALL panel so FtheBand can open it separately.";
+        return r;
+    }
+    if (d == nullptr) { r.text = "No audio device is open. Pick one in \"Audio device type\" and \"Output\" on the left."; return r; }
+    const auto type = deviceManager.getCurrentAudioDeviceType();
+    const bool asio = type == "ASIO";
+    const auto chans = d->getInputChannelNames();
+    const bool splitWanted = splitDevice.isNotEmpty();
+    const bool splitOk = splitWanted && split != nullptr && split->isOpen() && engine.isSplitInputActive() && ! split->errored.load();
+    const bool driverIn = ! deviceManager.getAudioDeviceSetup().inputChannels.isZero() && ! d->getActiveInputChannels().isZero();
+    if (splitOk) { r.ok = true; r.text = "Guitar input OK: " + splitDevice + " (own clock, drift-corrected). Headphones or speakers can be the output: the cable stays the input."; return r; }
+    if (driverIn && ! splitWanted) { r.ok = true; r.text = "Guitar input OK: " + juce::String (d->getActiveInputChannels().countNumberOfSetBits()) + " driver channel(s) ticked on " + type + "."; return r; }
+    if (splitWanted) {
+        if (asio) {
+            r.text = "No guitar input is open. The cable (" + splitDevice + ") can't open on its own because ASIO4ALL holds it exclusively (it is enabled in the ASIO4ALL panel). "
+                     "Greyed entries in \"Active input channels\" are just unticked: click the box. Or untick the cable in the ASIO4ALL panel (Driver control panel).";
+            if (chans.size() > 0) { r.fix = 1; r.action = "Use the cable through ASIO4ALL"; }
+        } else {
+            r.text = "No guitar input is open: the cable (" + splitDevice + ") can't open"
+                     + (splitError.isNotEmpty() ? ": " + splitError.upToFirstOccurrenceOf (" (low-latency mode", false, false) : juce::String ("."))
+                     + " Close other apps that use the cable (exclusive mode can't share a device), then retry.";
+            r.fix = 3; r.action = "Retry the cable";
+        }
+        return r;
+    }
+    if (asio) {
+        if (chans.size() > 0) { r.fix = 1; r.action = "Tick " + chans[0];
+            r.text = "No guitar input is ticked. Tick one under \"Active input channels\" (greyed entries are just unticked: click the box), or choose a cable as split input on the right."; }
+        else r.text = "ASIO4ALL offers no input. Open the ASIO4ALL panel (Driver control panel) and enable the cable (Real Tone / USB Guitar Adapter) there, or choose the cable as split input on the right.";
+        return r;
+    }
+    r.text = "No guitar input is open. " + type + " drives the output only (exclusive mode can't share the cable), so the guitar is opened separately as a split input.";
+    auto names = splitCandidates(); juce::String pick;
+    for (auto& n : names) if (n.containsIgnoreCase ("rocksmith") || n.containsIgnoreCase ("guitar")) { pick = n; break; }
+    if (pick.isNotEmpty()) { r.fix = 2; r.action = "Use " + pick.substring (0, 24) + (pick.length() > 24 ? "..." : ""); }
+    return r;
+}
+void MainComponent::applyInputFix (int fix)
+{
+    auto* d = deviceManager.getCurrentAudioDevice(); if (d == nullptr) return;
+    if (fix == 3) { openSplitInput (splitType, splitDevice); return; }
+    if (fix == 2) {
+        for (auto& n : splitCandidates()) if (n.containsIgnoreCase ("rocksmith") || n.containsIgnoreCase ("guitar")) { openSplitInput (splitType, n); return; }
+        return;
+    }
+    if (fix == 1) {   // guitar through the ASIO driver's own input channel
+        const auto chans = d->getInputChannelNames(); if (chans.isEmpty()) return;
+        int idx = 0;
+        for (int i = 0; i < chans.size(); ++i) if (chans[i].containsIgnoreCase ("guitar") || chans[i].containsIgnoreCase ("rocksmith") || chans[i].containsIgnoreCase ("usb")) { idx = i; break; }
+        logEvent ("input: one-click fix - guitar through ASIO channel '" + chans[idx] + "'");
+        closeSplitInput();
+        auto s = deviceManager.getAudioDeviceSetup();
+        s.inputDeviceName = s.outputDeviceName; s.useDefaultInputChannels = false; s.inputChannels.clear(); s.inputChannels.setBit (idx);
+        deviceManager.setAudioDeviceSetup (s, true);
+    }
+}
+
 juce::String MainComponent::splitStatusText() const
 {
     if (splitDevice.isEmpty()) return "Split input: off (input and output share the output device's clock)";
@@ -1168,7 +1363,7 @@ void MainComponent::driftTick()
 }
 
 /** session.xml:
-    <Session instrument tuning cents strangle muteBassChair bassGiveWay style fallbackBpm holdBars startMode countInClick monitor inputGain masterGain uiScale donateUrl>
+    <Session instrument tuning cents strangle muteBassChair bassGiveWay style fallbackBpm holdBars startMode countInClick monitor inputGain masterGain uiScale donateUrl skin(default|page)>
       <Chairs><Chair type="Drums" role="0" gain="0.9" mute="0" solo="0"/>...</Chairs> <DEVICESETUP .../> <SplitInput type device auto/> <Latency lowLatencyInput trimMs/> <Mic device gain monitor/> <PluginChain>...</PluginChain> </Session> */
 void MainComponent::loadSession()
 {
@@ -1176,6 +1371,7 @@ void MainComponent::loadSession()
     savedSession = juce::XmlDocument::parse (settingsFile());
     if (savedSession == nullptr || ! savedSession->hasTagName ("Session")) { savedSession = nullptr; return; }
     auto& x = *savedSession;
+    skin = x.getStringAttribute ("skin", "default") == "page" ? 1 : 0;
     engine.instrument = (int) inputInstrumentFromId (x.getStringAttribute ("instrument", "bassvi"));
     engine.tuning = (int) tuningFromId (x.getStringAttribute ("tuning", "standard"));
     engine.customCents = (float) juce::jlimit (-300.0, 300.0, x.getDoubleAttribute ("cents", 0));
@@ -1188,6 +1384,7 @@ void MainComponent::loadSession()
     engine.startMode = x.getStringAttribute ("startMode", "play") == "button" ? 1 : 0; engine.countInClick = x.getBoolAttribute ("countInClick", true);
     engine.monitorGuitar = x.getBoolAttribute ("monitor", true);
     engine.guitarGain = (float) x.getDoubleAttribute ("inputGain", 1.0);
+    engine.placeholderDrive = x.getBoolAttribute ("placeholderDrive", false);
     engine.masterGain = (float) x.getDoubleAttribute ("masterGain", 0.8);
     uiScale = (float) x.getDoubleAttribute ("uiScale", 0);
     if (x.hasAttribute ("donateUrl")) donateUrl = x.getStringAttribute ("donateUrl");
@@ -1216,8 +1413,9 @@ void MainComponent::saveSession()
     root.setAttribute ("strangle", engine.strangle.load()); root.setAttribute ("muteBassChair", engine.muteBassChair.load()); root.setAttribute ("bassGiveWay", engine.bassGiveWay.load());
     root.setAttribute ("style", styleNames[engine.style.load()]); root.setAttribute ("fallbackBpm", engine.fallbackBpm.load()); root.setAttribute ("holdBars", engine.holdBars.load());
     root.setAttribute ("startMode", engine.startMode.load() == 1 ? "button" : "play"); root.setAttribute ("countInClick", engine.countInClick.load());
-    root.setAttribute ("monitor", engine.monitorGuitar.load()); root.setAttribute ("inputGain", engine.guitarGain.load());
+    root.setAttribute ("monitor", engine.monitorGuitar.load()); root.setAttribute ("inputGain", engine.guitarGain.load()); root.setAttribute ("placeholderDrive", engine.placeholderDrive.load());
     root.setAttribute ("masterGain", engine.masterGain.load()); root.setAttribute ("uiScale", uiScale); root.setAttribute ("donateUrl", donateUrl);
+    root.setAttribute ("skin", skin == 1 ? "page" : "default");
     auto* cs = root.createNewChildElement ("Chairs");
     for (auto& c : engine.getChairs()) { auto* e = cs->createNewChildElement ("Chair");
         e->setAttribute ("type", chairTypeNames()[(int) c.type]); e->setAttribute ("role", c.role); e->setAttribute ("gain", c.gain);
@@ -1235,6 +1433,13 @@ void MainComponent::saveSession()
 void MainComponent::changeListenerCallback (juce::ChangeBroadcaster* src)
 {
     if (reconfiguring) return;
+    if (src != nullptr && splitDevice.isNotEmpty() && deviceManager.getCurrentAudioDeviceType() == "ASIO"
+        && ! deviceManager.getAudioDeviceSetup().inputChannels.isZero()) {
+        // the user ticked an ASIO input channel (e.g. the Real Tone cable in ASIO4ALL): that is an explicit choice, so the
+        // driver's input wins. Before, the split-input logic below stripped the tick again, so the channel looked unselectable.
+        logEvent ("input: ASIO input channel ticked -> split input (" + splitDevice + ") switched off, the guitar now comes through the driver");
+        closeSplitInput();
+    }
     if (src != nullptr) {
         // output restarted (new device/rate/buffer): stop split input, re-prepare the FIFO, restart it
         reopenSplitInputForOutput();
@@ -1315,6 +1520,14 @@ juce::StringArray MainComponent::renderScreens (const juce::File& dir)
                                        + (s.scale > 1.0f ? "@" + juce::String ((int) s.scale) + "x" : juce::String()) + ".png");
             f.deleteFile(); juce::FileOutputStream os (f); juce::PNGImageFormat png;
             if (os.openedOk() && png.writeImageToStream (img, os)) out.add (f.getFullPathName());
+            if (i == 3 && s.scale == 1.0f) {   // Audio tab again with the "cable held by ASIO4ALL" message + one-click fix showing
+                previewIssue = 1; pages[i]->content->tick(); pages[i]->resized();
+                auto img2 = createComponentSnapshot (getLocalBounds(), true, 1.0f);
+                auto f2 = dir.getChildFile ("audio-input-issue_" + juce::String (s.w) + "x" + juce::String (s.h) + ".png");
+                f2.deleteFile(); juce::FileOutputStream os2 (f2);
+                if (os2.openedOk() && png.writeImageToStream (img2, os2)) out.add (f2.getFullPathName());
+                previewIssue = 0; pages[i]->content->tick();
+            }
         }
     }
     usePreview = false;

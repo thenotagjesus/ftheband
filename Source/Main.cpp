@@ -5,6 +5,7 @@
 #include "Util/ProcStats.h"
 #include "Util/Migration.h"
 #include "Cli/AudioProbe.h"
+#include "Setup/FirstRunSetup.h"
 
 #ifndef FTHEBAND_DISPLAY_VERSION
  #define FTHEBAND_DISPLAY_VERSION "0.1.0-beta"
@@ -21,7 +22,28 @@ public:
         if (si >= 0) {   // render every tab to PNGs and quit (CI / layout review)
             juce::File dir = juce::File::getCurrentWorkingDirectory().getChildFile (args[si + 1].isNotEmpty() ? args[si + 1] : "screens");
             MainComponent mc (false);
+            if (const int ski = args.indexOf ("--skin"); ski >= 0) { if (args[ski + 1] == "roundtrip") { mc.setSkin (1); mc.setSkin (0); } else mc.setSkin (args[ski + 1] == "page" ? 1 : 0); }   // --skin page|default|roundtrip (roundtrip = on then off again: must equal default)
             for (auto& f : mc.renderScreens (dir)) std::cout << f << std::endl;
+            setApplicationReturnValue (0); quit(); return;
+        }
+        if (args.contains ("--setup-check")) {   // list what the first-run setup would show; never installs. --verify-flex-download [bad] fetches the FlexASIO installer INTO MEMORY only and checks its SHA-256. --out <file> writes there too.
+            juce::String t; juce::StringArray none;
+            const auto pr = sj::setup::detect (none);
+            t << "windows=" << (int) pr.windows << " asio4all=" << (int) pr.asio4all << " flexasio=" << (int) pr.flexasio << " samples=" << (int) pr.samples << " cable=" << (int) pr.cableSeen << " smartAppControl=" << pr.smartAppControl << "\n";
+            for (auto& it : sj::setup::buildItems (pr)) t << (it.state == sj::setup::State::Ok ? "[ok]      " : it.state == sj::setup::State::Missing ? "[missing] " : "[note]    ") << it.id << " | " << it.title << "\n";
+            if (const int vi = args.indexOf ("--verify-flex-download"); vi >= 0) {
+                const bool bad = args[vi + 1] == "bad"; juce::MemoryBlock mb; juce::String err;
+                const bool ok = sj::setup::FlexAsioInstaller::fetchVerified (sj::setup::FlexAsioUrl, sj::setup::FlexAsioPrefix, sj::setup::FlexAsioMaxSize,
+                                                                              bad ? juce::String ("00") + juce::String (sj::setup::FlexAsioSha256).substring (2) : juce::String (sj::setup::FlexAsioSha256), mb, err);
+                t << "flexasio download check" << (bad ? " (wrong hash, must fail)" : "") << ": " << (ok ? "VERIFIED" : "REJECTED") << ", " << (juce::int64) mb.getSize() << " bytes " << err << "\n";
+                juce::MemoryBlock dummy; juce::String err2;
+                const bool ok2 = sj::setup::FlexAsioInstaller::fetchVerified ("http://github.com/dechamps/FlexASIO/releases/download/x/y.exe", sj::setup::FlexAsioPrefix, 1000, "00", dummy, err2);
+                t << "plain-http url: " << (ok2 ? "ACCEPTED (bug)" : "REJECTED") << " (" << err2 << ")\n";
+                const bool ok3 = sj::setup::FlexAsioInstaller::fetchVerified ("https://example.com/FlexASIO.exe", sj::setup::FlexAsioPrefix, 1000, "00", dummy, err2);
+                t << "foreign host: " << (ok3 ? "ACCEPTED (bug)" : "REJECTED") << " (" << err2 << ")\n";
+            }
+            std::cout << t << std::endl;
+            if (const int oi = args.indexOf ("--out"); oi >= 0) juce::File::getCurrentWorkingDirectory().getChildFile (args[oi + 1]).replaceWithText (t);
             setApplicationReturnValue (0); quit(); return;
         }
         const int pi = args.indexOf ("--audio-probe");
@@ -128,6 +150,7 @@ private:
             if (auto* d = juce::Desktop::getInstance().getDisplays().getPrimaryDisplay()) area = d->userArea;
             const float s = mc->uiScale > 0 ? mc->uiScale : MainComponent::autoScaleFor (area.reduced (0, 40));
             if (std::abs (s - 1.0f) > 0.01f) juce::Desktop::getInstance().setGlobalScaleFactor (s);
+            setBackgroundColour (MainComponent::windowBackground (mc->getSkin()));
             setContentOwned (mc, true);
             setResizable (true, true); setResizeLimits (480, 320, 10000, 10000);
             centreWithSize (MainComponent::LogicalW, MainComponent::LogicalH); setVisible (true);

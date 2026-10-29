@@ -168,9 +168,9 @@ void AudioEngine::processChunk (const float* in, const float* mic, float* const*
     float* di = buses.getWritePointer (0); float* fx = buses.getWritePointer (1);
     if (in != nullptr) juce::FloatVectorOperations::copy (di, in, n);
 
-    float peak = 0, sumSq = 0;
+    float peak = 0, sumSq = 0; const bool drv = placeholderDrive.load();
     for (int i = 0; i < n; ++i) { const float x = di[i]; peak = juce::jmax (peak, std::abs (x)); sumSq += x * x;
-        fx[i] = std::tanh (4.0f * x) * 0.5f; }                    // placeholder drive (amp sim goes in the inserts)
+        fx[i] = drv ? std::tanh (4.0f * x) * 0.5f : x; }          // optional placeholder drive (amp sim goes in the inserts); clean DI by default
     inputPeak = juce::jmax (peak, inputPeak.load() * 0.95f); inputRms = std::sqrt (sumSq / (float) juce::jmax (1, n));
     plugins.process (fx, n);
 

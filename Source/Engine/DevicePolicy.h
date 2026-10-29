@@ -51,10 +51,20 @@ inline juce::StringArray outputOrder (juce::AudioIODeviceType& t, const LogFn& l
     return order;
 }
 
+/** USB guitar cables (Rocksmith Real Tone cable, "USB Guitar Adapter", ...). On a fresh Windows PC the default capture device is the
+    laptop's built-in microphone array, not the cable, so the cable must be picked by name. */
+inline bool looksLikeGuitarCable (const juce::String& n)
+{
+    return n.containsIgnoreCase ("Rocksmith") || n.containsIgnoreCase ("Real Tone") || n.containsIgnoreCase ("RealTone")
+        || n.containsIgnoreCase ("Guitar Adapter") || n.containsIgnoreCase ("USB Guitar");
+}
+
+/** The guitar input to open: a plugged-in guitar cable if there is one, else the Windows default capture device. */
 inline juce::String defaultInputName (juce::AudioIODeviceType& t)
 {
     t.scanForDevices();
     const auto names = t.getDeviceNames (true); const int di = t.getDefaultDeviceIndex (true);
+    for (auto& n : names) if (looksLikeGuitarCable (n)) return n;
     return di >= 0 && di < names.size() ? names[di] : juce::String();
 }
 

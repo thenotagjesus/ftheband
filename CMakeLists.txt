@@ -6,6 +6,10 @@ project(Ftheband VERSION 0.1.0 LANGUAGES C CXX)
 set(FTHEBAND_DISPLAY_VERSION "0.1.0-beta" CACHE STRING "Human-readable version string")
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
+# Static C/C++ runtime (/MT) on MSVC so a fresh Windows PC needs no Visual C++ Redistributable. Must be set before any target is created.
+if(MSVC)
+    set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>" CACHE STRING "Static MSVC runtime" FORCE)
+endif()
 
 # ASIO is ON by default on Windows (ASIO4ALL is the primary driver), always OFF elsewhere.
 if(WIN32)
@@ -52,6 +56,8 @@ juce_add_gui_app(Ftheband
     COMPANY_NAME "FtheBand"
     COMPANY_COPYRIGHT "Copyright (C) 2026 FtheBand contributors. AGPL-3.0-only."
     BUNDLE_ID "com.ftheband.app"
+    ICON_BIG "${CMAKE_CURRENT_SOURCE_DIR}/Resources/icon/ftheband-icon-1024.png"
+    ICON_SMALL "${CMAKE_CURRENT_SOURCE_DIR}/Resources/icon/ftheband-icon-32.png"
     VERSION 0.1.0)
 juce_generate_juce_header(Ftheband)
 
@@ -129,7 +135,11 @@ else()
     target_compile_definitions(Ftheband PRIVATE JUCE_ASIO=0)
 endif()
 
-target_link_libraries(Ftheband PRIVATE
+# Optional "FtheBand page" skin: Source Serif 4 + JetBrains Mono (SIL OFL 1.1; licences in Resources/fonts and THIRD-PARTY-NOTICES.md)
+juce_add_binary_data(FthebandFonts SOURCES
+    Resources/fonts/SourceSerif4-Regular.ttf Resources/fonts/SourceSerif4-Bold.ttf
+    Resources/fonts/JetBrainsMono-Regular.ttf Resources/fonts/JetBrainsMono-Bold.ttf)
+target_link_libraries(Ftheband PRIVATE FthebandFonts
     juce::juce_audio_utils juce::juce_audio_processors juce::juce_audio_devices juce::juce_audio_formats
     juce::juce_audio_basics juce::juce_dsp juce::juce_gui_extra juce::juce_cryptography
     PUBLIC juce::juce_recommended_config_flags juce::juce_recommended_warning_flags)
