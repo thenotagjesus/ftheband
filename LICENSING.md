@@ -20,7 +20,7 @@ Trademarks are separate from copyright. **ASIO is a trademark and software of St
 
 "ASIO" and "VST" are Steinberg trademarks, and their logos follow
 Steinberg's usage guidelines (`VST3_Usage_Guidelines.pdf`, and "Trademark and Logo Usage" in the ASIO README).
-Don't use the logos unless you follow those guidelines. Don't use "Rocksmith" (Ubisoft) in the product name or
+Don't use the logos unless you follow those guidelines. Don't use other companies' product or game names in the product name or
 branding. Describing what the app is "like" in plain text is a different matter.
 
 ## What you must do when distributing binaries (AGPLv3 §4–6, plus GPLv3 for the SDK parts)

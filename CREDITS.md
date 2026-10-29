@@ -20,7 +20,7 @@ User recordings (for example `user-takes/`) belong to the user. They are never b
 
 ## Attribution text to ship (required by CC BY 3.0)
 > Wurlitzer EP200 samples by Greg Sullivan (sullivang.net), SFZ mapping by kinwie, licensed under CC BY 3.0
-> (https://creativecommons.org/licenses/by/3.0/). Trimmed and resampled for FtheBand.
+> (https://creativecommons.org/licenses/by/3.0/). Unmodified; resampled and re-pitched on playback.
 > Drum, cymbal and bass samples: Karoryfer Samples (Gogodze Phu Vol. II, Black And Blue Basses) and
 > Versilian Studios (VCSL), CC0.
 

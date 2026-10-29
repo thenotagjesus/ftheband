@@ -699,7 +699,7 @@ struct AboutPage : Content {
                       "License, version 3. It comes with ABSOLUTELY NO WARRANTY. If you run a modified version for others over a network,\n"
                       "you must offer them its source. Built with JUCE (AGPLv3). Corresponding source: the link below and SOURCE.txt in the download.\n\n"
                       "Wurlitzer EP200 samples by Greg Sullivan (sullivang.net), SFZ mapping by kinwie, licensed under CC BY 3.0\n"
-                      "(creativecommons.org/licenses/by/3.0). Trimmed and resampled for FtheBand.\n"
+                      "(creativecommons.org/licenses/by/3.0). Unmodified; resampled and re-pitched on playback.\n"
                       "Drum, cymbal and bass samples: Karoryfer Samples (Gogodze Phu Vol. II, Black And Blue Basses) and\n"
                       "Versilian Studios (VCSL), CC0. Full list: CREDITS.md. Sound packs bundled in samples/packs are listed below.\n\n"
                       "FtheBand contains no third-party installers. The optional FlexASIO driver (MIT licence, github.com/dechamps/FlexASIO) is only downloaded\n"

@@ -1,6 +1,6 @@
 # FtheBand — Design
 
-A JUCE 8 (C++17) desktop app in the spirit of Rocksmith's Session Mode. You play (Bass VI by default; guitar or bass
+A JUCE 8 (C++17) desktop app in the spirit of a Session Mode-style play-along. You play (Bass VI by default; guitar or bass
 also work) and a sampled band of up to 8 chairs follows your chords, tempo and intensity. Every bus can be recorded
 as a sample-aligned stem. AGPL-3.0-only.
 
@@ -26,7 +26,7 @@ never act on a previous session's data. When the tracker reports a **locked** te
 ## 2. Audio I/O
 - The target hardware is a USB guitar interface (class-compliant cable, mono, 48 kHz) as input and onboard Realtek as output.
 - Device policy (`MainComponent::setupAudioDevices`): first the saved state in `session.xml`. Then, **Windows only (`#if JUCE_WINDOWS`)**,
-  ASIO4ALL at 48 kHz/64–128 samples, then WASAPI shared with the USB guitar interface (auto-detected by a device name containing "Rocksmith"). The last resort is the platform default (ALSA/JACK).
+  ASIO4ALL at 48 kHz/64–128 samples, then WASAPI shared with the USB guitar interface (auto-detected from the cable's device name). The last resort is the platform default (ALSA/JACK).
 - **Not implemented (deliberately, review item 02):** latency compensation. (Item 01, the drift resampler, is now implemented; see the end of this file.)
   of the stems. The stems stay aligned *with each other* because every stem is written from the same callback.
 
