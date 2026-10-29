@@ -1,6 +1,6 @@
 # FtheBand
 
-Version 0.1.0-beta (formerly "Session Jam"). On first run FtheBand copies your saved settings, session and log from the old `%APPDATA%\SessionJam\` folder (`~/.config/SessionJam/` on Linux) into `Ftheband\`; the old folder is left untouched. Recordings now go to `Music/Ftheband Takes`; takes already saved in `Music/SessionJam Takes` are not moved.
+Version 0.1.0-beta. On first run FtheBand copies your saved settings, session and log from the old `%APPDATA%\SessionJam\` folder (`~/.config/SessionJam/` on Linux) into `Ftheband\`; the old folder is left untouched. Recordings now go to `Music/Ftheband Takes`; takes already saved in `Music/SessionJam Takes` are not moved.
 
 A Rocksmith-Session-Mode-style jam app with an adaptive backing band and per-track stem recording. See DESIGN.md for the architecture and roadmap.
 
