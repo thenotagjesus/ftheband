@@ -226,3 +226,7 @@ footer {
   .beats { grid-template-columns: 1fr; }
   footer { flex-direction: column; }
 }
+
+.soon .cta a { color: var(--red); }
+.soon .btn { font-weight: 700; }
+.soon .note { font-size: .85rem; color: #a89f8f; }

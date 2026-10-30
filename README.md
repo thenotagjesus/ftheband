@@ -6,6 +6,8 @@ Version 0.1.0-beta. On first run FtheBand copies your saved settings, session an
 
 A play-along jam app with an adaptive backing band and per-track stem recording. See DESIGN.md for the architecture and roadmap.
 
+**Public beta:** download the Windows build from the [v0.1.0-beta release](https://github.com/thenotagjesus/ftheband/releases/tag/v0.1.0-beta). Ideas and suggestions go in [Discussions](https://github.com/thenotagjesus/ftheband/discussions), bugs in [Issues](https://github.com/thenotagjesus/ftheband/issues). FtheBand is free and open source (AGPL-3.0-only); pay what you want (suggested $3), and 50% of earnings go to cancer charities. The exe is not code-signed yet, so Windows SmartScreen or Smart App Control may warn about it.
+
 ## Build (Windows 11, VS Build Tools 2022, CMake, Ninja, git)
 ```powershell
 .\build.ps1            # Release, ASIO ON (Steinberg ASIO SDK auto-downloaded), log in build.log
@@ -126,9 +128,10 @@ download fails, the band falls back to synthesised voices.
 | `tools/follow_check.py demos/demo-rock 120` | Band chord accuracy and latency vs the truth file of a rendered demo. |
 
 ## Code signing policy
-Free code signing provided by [SignPath.io](https://about.signpath.io/), certificate by [SignPath Foundation](https://signpath.org/).
-Only `FtheBand.exe`, built from this repository by [GitHub Actions](.github/workflows/release.yml), is signed, and every release is approved by hand.
-Team roles (author, reviewer, approver): [thenotagjesus](https://github.com/thenotagjesus). Full policy, including how releases are built and verified: [docs/CODE-SIGNING.md](docs/CODE-SIGNING.md).
+Releases are **not code-signed yet**, so Windows SmartScreen or Smart App Control may warn about `FtheBand.exe` or block it until signing is in place.
+Free code signing through [SignPath Foundation](https://signpath.org/) (certificate by SignPath Foundation, service by [SignPath.io](https://about.signpath.io/)) is planned.
+Once it is in place, only `FtheBand.exe`, built from this repository by [GitHub Actions](.github/workflows/release.yml), will be signed, and every release will be approved by hand.
+Team roles (author, reviewer, approver): [thenotagjesus](https://github.com/thenotagjesus). Planned policy, including how releases are built and verified: [docs/CODE-SIGNING.md](docs/CODE-SIGNING.md).
 Privacy: this program will not transfer any information to other networked systems unless specifically requested by the user or the person installing or operating it
 (the only network use is the *Get more sounds* tab, when you press Refresh catalog or Install).
 
