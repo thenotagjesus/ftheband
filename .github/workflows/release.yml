@@ -75,10 +75,15 @@ jobs:
         run: |
           $cm = Get-Content CMakeLists.txt -Raw
           $display = [regex]::Match($cm, 'set\(FTHEBAND_DISPLAY_VERSION\s+"([^"]+)"').Groups[1].Value
-          $numeric = [regex]::Match($cm, 'project\(FtheBand\s+VERSION\s+([0-9.]+)').Groups[1].Value
+          # Case-insensitive: CMakeLists.txt declares project(Ftheband ...)
+          $numeric = [regex]::Match($cm, '(?i)project\(\s*FtheBand\s+VERSION\s+([0-9]+(?:\.[0-9]+){0,3})').Groups[1].Value
           if (-not $display -or -not $numeric) { throw "Could not read the version from CMakeLists.txt" }
+          # Accept pre-release display versions such as 0.1.0-beta or 0.2.0-rc.1
+          if ($display -notmatch '^[0-9]+(\.[0-9]+){1,3}(-[0-9A-Za-z.-]+)?$') { throw "FTHEBAND_DISPLAY_VERSION '$display' is not a valid version (expected e.g. 0.1.0 or 0.1.0-beta)" }
+          $displayCore = ($display -split '-', 2)[0]
+          if ($displayCore -ne $numeric) { throw "FTHEBAND_DISPLAY_VERSION $display does not match project VERSION $numeric" }
           if ($env:GITHUB_REF_TYPE -eq 'tag') {
-            $tagVersion = $env:GITHUB_REF_NAME -replace '^v', ''
+            $tagVersion = $env:GITHUB_REF_NAME -replace '^[vV]', ''
             if ($tagVersion -ne $display) { throw "Tag $($env:GITHUB_REF_NAME) does not match FTHEBAND_DISPLAY_VERSION $display in CMakeLists.txt. Bump the version first, then tag v$display." }
           }
           "version=$display" >> $env:GITHUB_OUTPUT
