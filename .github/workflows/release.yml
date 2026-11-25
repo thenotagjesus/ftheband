@@ -253,11 +253,10 @@ jobs:
           $packDirs = @(Get-ChildItem (Join-Path $tmp 'samples/packs') -Directory)
           if (@($catalog).Count -ne 6 -or $packDirs.Count -ne 6) { throw "Expected 6 bundled packs, catalog has $(@($catalog).Count), zip has $($packDirs.Count)" }
           foreach ($p in $catalog) { if (-not (Test-Path (Join-Path $tmp "samples/packs/$($p.id)/pack.map"))) { throw "Pack $($p.id) is missing" } }
-          # FlexASIO 1.10b must match the hash pinned in package-win.ps1
-          $pin = [regex]::Match((Get-Content tools/package-win.ps1 -Raw), '\$FlexSha\s*=\s*"([0-9a-f]{64})"').Groups[1].Value
-          $flex = Join-Path $tmp 'drivers/FlexASIO/FlexASIO-1.10b.exe'
-          if (-not $pin -or -not (Test-Path $flex)) { throw "FlexASIO 1.10b installer or its pinned hash is missing" }
-          if ((Get-FileHash $flex -Algorithm SHA256).Hash.ToLower() -ne $pin) { throw "FlexASIO sha256 does not match the pinned value" }
+          # No driver installers are bundled: FlexASIO is downloaded by the app (hash pinned in FirstRunSetup.h) only on the player's click
+          $pin = [regex]::Match((Get-Content Source/Setup/FirstRunSetup.h -Raw), 'FlexAsioSha256\s*=\s*"([0-9a-f]{64})"').Groups[1].Value
+          if (-not $pin) { throw "The FlexASIO sha256 pin is missing from Source/Setup/FirstRunSetup.h" }
+          if (Get-ChildItem $tmp -Recurse -File | Where-Object Name -match 'FlexASIO') { throw "FlexASIO must not be bundled in the package (the app downloads it on request)" }
           if (Get-ChildItem $tmp -Recurse -File | Where-Object Name -match 'ASIO4ALL') { throw "ASIO4ALL must not be in the package" }
           # the exe inside the zip is the one we verified above
           $s = Get-AuthenticodeSignature (Join-Path $tmp 'FtheBand.exe')
