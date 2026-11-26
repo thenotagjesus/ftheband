@@ -69,6 +69,7 @@ if (-not $Commit) { try { $Commit = (& git -C $root rev-parse HEAD 2>$null | Sel
 if (-not $Commit -or $Commit -notmatch '^[0-9a-f]{7,40}$') { throw "SOURCE.txt needs the git commit: pass -Commit <hash> (the tree has no .git)" }
 $src = [IO.File]::ReadAllText((Join-Path $root "SOURCE.txt"), $utf8)
 $src = $src.Replace("Commit:    @COMMIT@", "Commit:    $Commit  (https://github.com/thenotagjesus/ftheband/commit/$Commit)")
+$src = $src -replace '(?m)^Program:\s+FtheBand\s+\S+', "Program:   FtheBand $Version"
 [IO.File]::WriteAllText((Join-Path $stage "SOURCE.txt"), $src, $utf8)
 
 # ---- base sample set (assets\samples: drums\ bass\ keys\ + samples.map) -> samples\

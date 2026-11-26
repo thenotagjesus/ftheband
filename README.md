@@ -31,7 +31,7 @@ ASIO is always off on Linux.
 
 ## Credits and licence notes
 
-- Wurlitzer EP200 samples by Greg Sullivan (http://www.sullivang.net/), SFZ mapping by kinwie, from https://github.com/sfzinstruments/GregSullivan.E-Pianos, licensed under **Creative Commons Attribution 3.0 Unported** (https://creativecommons.org/licenses/by/3.0/). Full credit in `CREDITS.md` and `samples\CREDITS.txt` in the zip.
+- Wurlitzer EP200 samples by Greg Sullivan (http://www.sullivang.net/), SFZ mapping by kinwie, from https://github.com/sfzinstruments/GregSullivan.E-Pianos, licensed under **Creative Commons Attribution 3.0 Unported** (https://creativecommons.org/licenses/by/3.0/). Unmodified; resampled and re-pitched on playback. Full credit in `CREDITS.md` and `samples\CREDITS.txt` in the zip.
 - Drums, bass, organ, strings and the other packs are CC0 1.0 (Karoryfer Samples, Versilian Studios and others, see `CREDITS.md`).
 - Built with JUCE 8.0.8 (AGPLv3). Bundled-library notices are in `THIRD-PARTY-NOTICES.md`.
 - Source offer (AGPLv3): `SOURCE.txt` and https://github.com/thenotagjesus/ftheband
