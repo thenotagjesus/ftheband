@@ -32,7 +32,7 @@ struct Probe {
     bool windows = false;
     bool asio4all = false, flexasio = false;
     bool samples = false;           // bundled or downloaded band samples found
-    bool cableSeen = false;         // a USB guitar cable (Rocksmith / Real Tone ...) is listed as a capture device right now
+    bool cableSeen = false;         // a USB guitar cable / USB interface is listed as a capture device right now (name-matched internally)
     int  smartAppControl = 0;       // 0 off / unknown, 1 enforced, 2 evaluation
 };
 
@@ -104,8 +104,8 @@ inline std::vector<Item> buildItems (const Probe& p)
                                 "Get free CC0 / CC-BY packs on the \"Get more sounds\" tab, or unzip the full FtheBand download with its samples folder.",
         p.samples ? State::Ok : State::Missing });
     r.push_back ({ "cable", "Guitar input (USB guitar cable)",
-        p.cableSeen ? "A USB guitar cable (Rocksmith Real Tone / USB Guitar Adapter) is plugged in and listed by Windows. No driver is needed for it."
-                    : "No USB guitar cable is listed right now. Plug in the Rocksmith Real Tone cable (no driver needed: Windows treats it as a normal USB audio device), "
+        p.cableSeen ? "A USB guitar cable is plugged in and listed by Windows. No driver is needed for it."
+                    : "No USB guitar cable is listed right now. Plug in a USB guitar cable or USB interface (no driver needed: Windows treats it as a normal USB audio device), "
                       "then press Re-check. In Windows Sound settings, set the cable's Recording format to 48000 Hz if you have trouble.",
         p.cableSeen ? State::Ok : State::Missing });
     if (p.smartAppControl != 0)

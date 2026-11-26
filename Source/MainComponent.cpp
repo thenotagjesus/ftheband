@@ -224,7 +224,7 @@ struct JamPage : Content {
         g.drawText ("Tempo: " + (s.beatLocked ? juce::String (s.bpm, 1) + " BPM (locked to count-in)" : juce::String (e.fallbackBpm.load(), 0) + " BPM (fallback, no count-in yet)"),
                     a.removeFromTop (28), juce::Justification::left);
         const auto ph = m.usePreview ? AudioEngine::Phase::Listening : e.phase();
-        juce::String phase = ph == AudioEngine::Phase::Idle ? "Idle - press Start session" : ph == AudioEngine::Phase::Learning ? "Learning noise - don't play"
+        juce::String phase = ph == AudioEngine::Phase::Idle ? "Idle - press Start (Space)" : ph == AudioEngine::Phase::Learning ? "Learning noise - don't play"
                            : s.countIn ? "Listening - count in (4 hits) or just play" : "Jamming";
         g.setColour (textDim); g.drawText ("Session: " + phase + "    Band: " + bandStateName (m.usePreview ? 1 : e.bandState.load()), a.removeFromTop (28), juce::Justification::left);
         // ---- chroma
@@ -1213,7 +1213,7 @@ MainComponent::InputIssue MainComponent::inputIssue() const
     auto* d = deviceManager.getCurrentAudioDevice();
     if (usePreview && previewIssue > 0) {   // --screens: show each message
         r.fix = 1; r.action = "Use the cable through ASIO4ALL";
-        r.text = "No guitar input is open. The cable (" + juce::String ("Microphone (Rocksmith USB Guitar Adapter)") + ") can't open on its own because ASIO4ALL holds it exclusively (it is enabled in the ASIO4ALL panel). "
+        r.text = "No guitar input is open. The USB guitar cable can't open on its own because ASIO4ALL holds it exclusively (it is enabled in the ASIO4ALL panel). "
                  "Greyed entries in \"Active input channels\" are just unticked: click the box. Or untick the cable in the ASIO4ALL panel so FtheBand can open it separately.";
         return r;
     }
@@ -1242,7 +1242,7 @@ MainComponent::InputIssue MainComponent::inputIssue() const
     if (asio) {
         if (chans.size() > 0) { r.fix = 1; r.action = "Tick " + chans[0];
             r.text = "No guitar input is ticked. Tick one under \"Active input channels\" (greyed entries are just unticked: click the box), or choose a cable as split input on the right."; }
-        else r.text = "ASIO4ALL offers no input. Open the ASIO4ALL panel (Driver control panel) and enable the cable (Real Tone / USB Guitar Adapter) there, or choose the cable as split input on the right.";
+        else r.text = "ASIO4ALL offers no input. Open the ASIO4ALL panel (Driver control panel) and enable the USB guitar cable there, or choose the cable as split input on the right.";
         return r;
     }
     r.text = "No guitar input is open. " + type + " drives the output only (exclusive mode can't share the cable), so the guitar is opened separately as a split input.";
