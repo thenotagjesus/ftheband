@@ -5,6 +5,7 @@
 #include "Analysis/Loudness.h"
 #include "Engine/Band.h"
 #include "Engine/MetalDrive.h"
+#include "UI/ChordDisplay.h"
 #include "Test/GuitarSynth.h"
 #include <cstdio>
 #include <map>
@@ -677,6 +678,30 @@ int runDriveTest() {
     return ok ? 0 : 1;
 }
 
+// ---------------------------------------------------------------------------------------------- --chord-display-test
+/** The Jam page's displayed-chord smoothing (UI only) on scripted flicker at the UI's 30 Hz tick. */
+int runChordDisplayTest() {
+    auto L = [] (int r, int t, int b = -1) { ChordLabel c; c.root = r; c.type = t; c.bass = b; return c; };
+    const ChordLabel A = L (4, Power), B = L (9, Power), N {}, Ae = L (4, Power, 11);
+    ChordDisplayHold h; const double dt = 1000.0 / 30.0; double t = 0; bool ok = true;
+    int changes = 0; double lastChange = -1e9, minGap = 1e9; ChordLabel prev;
+    auto run = [&] (double ms, auto fn) { for (double end = t + ms; t < end; t += dt) { h.update (fn ((int) std::lround (t / dt)), t);
+        const auto& s = h.shown(); if (s.name() != prev.name()) { ++changes; if (lastChange > -1e8) minGap = juce::jmin (minGap, t - lastChange); lastChange = t; prev = s; } } };
+    auto check = [&] (const juce::String& what, bool c) { out ((c ? "  ok   " : "  FAIL ") + what); ok &= c; };
+    run (1000, [&] (int) { return A; });                       check ("steady E5 shown", h.shown().name() == A.name());
+    const int c0 = changes; run (1000, [&] (int k) { return k % 2 ? A : B; });  check ("E5/A5 alternating every tick: display holds", changes == c0);
+    run (1000, [&] (int k) { return k % 3 == 0 ? Ae : A; });   check ("slash-bass flicker E5 <-> E5/B: display holds", h.shown().name() == A.name());
+    const double tB = t; double seenB = -1;
+    run (1000, [&] (int) { return B; }); if (h.shown().name() == B.name()) seenB = lastChange - tB;
+    check ("real change to A5 shown within 350 ms (" + juce::String (seenB, 0) + " ms)", seenB >= 0 && seenB <= 350);
+    const int c1 = changes; run (1000, [&] (int k) { return k % 4 == 0 ? N : B; }); check ("short dropouts between picks don't blank", changes == c1);
+    run (2000, [&] (int k) { return (k / 3) % 2 ? L (2, Maj) : L (7, Maj); });  // detector changing every 100 ms
+    run (1000, [&] (int) { return N; });                         check ("silence blanks the display", ! h.shown().valid());
+    check ("minimum time between displayed changes >= 250 ms (" + juce::String (minGap, 0) + " ms)", minGap >= 250);
+    out (ok ? "chord-display-test PASS" : "chord-display-test FAIL");
+    return ok ? 0 : 1;
+}
+
 int runCli (const juce::StringArray& args) {
     for (int i = 0; i < args.size(); ++i) {
         if (args[i] == "--instrument" && args.size() > i + 1) gInstrument = inputInstrumentFromId (args[i + 1]);
@@ -698,6 +723,7 @@ int runCli (const juce::StringArray& args) {
         if (args[i] == "--jam") return runJam (args, i);
         if (args[i] == "--drift-test") return runDriftTest (args, i);
         if (args[i] == "--drive-test") return runDriveTest();
+        if (args[i] == "--chord-display-test") return runChordDisplayTest();
     }
     return -1;
 }

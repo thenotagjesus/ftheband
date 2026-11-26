@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 FtheBand contributors
 #include "MainComponent.h"
+#include "UI/ChordDisplay.h"
 #include <set>
 #include "Util/ProcStats.h"
 #include "Net/SamplePacks.h"
@@ -98,6 +99,7 @@ struct JamPage : Content {
     juce::ToggleButton micMon { "Monitor mic" };
     juce::ComboBox startMode; juce::ToggleButton clickIn { "1-bar click" }; juce::Label bandLamp;
     juce::Rectangle<int> chordArea, chromaArea, meterArea;
+    ChordDisplayHold chordHold;   // displayed label only: >= 250 ms hold + vote/hysteresis (detector untouched)
 
     JamPage (MainComponent& mc, AudioEngine& en) : m (mc), e (en) {
         for (auto* c : std::initializer_list<juce::Component*> { &startBtn, &learnBtn, &learnBar, &recBtn, &takesBtn, &instL, &tunL, &centsL,
@@ -214,11 +216,12 @@ struct JamPage : Content {
         auto a = chordArea.reduced (20, 14);
         const auto t = (Tuning) e.tuning.load(); const float c = e.customCents.load();
         g.setColour (textDim); g.setFont (font (15)); g.drawText ("CHORD (sounding)", a.removeFromTop (20), juce::Justification::left);
-        g.setColour (s.chord.valid() ? accent : textDim); g.setFont (font (88, true));
-        g.drawText (s.chord.valid() ? juce::String (s.chord.name()) : juce::String ("--"), a.removeFromTop (100), juce::Justification::left);
+        const ChordLabel& shownChord = chordHold.shown();
+        g.setColour (shownChord.valid() ? accent : textDim); g.setFont (font (88, true));
+        g.drawText (shownChord.valid() ? juce::String (shownChord.name()) : juce::String ("--"), a.removeFromTop (100), juce::Justification::left);
         g.setColour (ink); g.setFont (font (18));
         juce::String shape = "--";
-        if (s.chord.valid()) { shape = noteName (fingeredPc (s.chord.root, t, c)); shape << chordSuffix (s.chord.type); }
+        if (shownChord.valid()) { shape = noteName (fingeredPc (shownChord.root, t, c)); shape << chordSuffix (shownChord.type); }
         g.drawText ("Shape as fingered (" + tuningNames()[(int) t] + "): " + shape, a.removeFromTop (28), juce::Justification::left);
         g.drawText ("Key: " + juce::String (keyName (s.key)), a.removeFromTop (28), juce::Justification::left);
         g.drawText ("Tempo: " + (s.beatLocked ? juce::String (s.bpm, 1) + " BPM (locked to count-in)" : juce::String (e.fallbackBpm.load(), 0) + " BPM (fallback, no count-in yet)"),
@@ -235,7 +238,7 @@ struct JamPage : Content {
         for (int i = 0; i < 12; ++i) {
             auto bar = juce::Rectangle<float> ((float) ca.getX() + (float) i * w + 3, (float) ca.getY() + 4, w - 6, (float) ca.getHeight() - 4);
             g.setColour (panel2); g.fillRect (bar);
-            g.setColour (i == s.chord.root ? accent : barCol);
+            g.setColour (i == shownChord.root ? accent : barCol);
             g.fillRect (bar.removeFromBottom (bar.getHeight() * juce::jlimit (0.0f, 1.0f, s.chroma[(size_t) i])));
             g.setColour (juce::Colours::lightgrey); g.drawText (noteName (i), juce::Rectangle<float> ((float) lab.getX() + (float) i * w, (float) lab.getY(), w, 18), juce::Justification::centred);
         }
@@ -262,6 +265,7 @@ struct JamPage : Content {
     }
     void tick() override {
         const auto& s = st();
+        chordHold.update (s.chord, juce::Time::getMillisecondCounterHiRes());
         const auto ph = e.phase();
         juce::ignoreUnused (ph); startBtn.setButtonText (startLabel());
         juce::Colour lc; bandLamp.setText (bandLampText (lc), juce::dontSendNotification); bandLamp.setColour (juce::Label::textColourId, lc);
