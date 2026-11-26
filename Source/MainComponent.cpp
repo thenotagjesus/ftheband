@@ -61,7 +61,7 @@ void restyleTree (juce::Component& c, const Pal& a, const Pal& b, std::set<juce:
         restyleTree (*ch, a, b, done);
     }
 }
-const juce::StringArray styleNames { "Rock", "Funk", "Blues", "Ballad" };
+const juce::StringArray styleNames { "Rock", "Funk", "Blues", "Ballad", "Metal" };
 const char* bandStateName (int s) { return s == 1 ? "Playing" : s == 2 ? "Fading out" : s == 3 ? "Counting in" : s == 4 ? "Ending (ringing out)" : "Out"; }
 
 struct Content : juce::Component { virtual void tick() {} };

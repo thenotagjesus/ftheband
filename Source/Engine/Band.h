@@ -62,6 +62,7 @@ class Band {
 public:
     enum State { Out, Playing, Breakdown, CountIn, Ending };
     struct LogEntry { int64_t sample; int kind; int a, b; };   // 0 chord(root,type) 1 state 2 fill(bar) 3 note(chair,midi)
+    static constexpr int MetalStyle = 4;   // index of "Metal" in Grooves.h / styleNames
     int style = 0; double bpm = 100; bool halfBarQuantize = false;
     /** Optional, both off by default (a Bass VI is played as a low guitar, so the bass chair plays normally):
         playerIsBass = "bass chair gives way": up an octave, sparse root (bar) + fifth (half bar);
@@ -295,7 +296,16 @@ private:
         }
         if (c.inFill && c.inBar >= 12 && fillHere) return;
         auto vel = [] (char ch) { return ch == 'X' ? 118 : ch == 'x' ? 92 : ch == 'g' ? 34 : 0; };
-        if (int v = vel (at (tr.kick, c.s))) push (tm (c, jitterMs (1.5f)), ci, true, 36, humanVel (v));
+        if (style == MetalStyle) {
+            // double kick follows the picking: the off-16th kicks (e/a) only play while the player is digging in,
+            // and every kick's velocity tracks the short-term intensity. Tight timing (small jitter), even velocities.
+            const char kc = at (tr.kick, c.s);
+            const bool off16 = (c.q == 1 || c.q == 3);
+            if (kc != '-' && ! (off16 && kc == 'x' && fastInt < 0.5f)) {
+                const int v = kc == 'X' ? 112 + (int) (12.0f * fastInt) : 78 + (int) (40.0f * juce::jlimit (0.0f, 1.0f, fastInt));
+                push (tm (c, jitterMs (0.6f)), ci, true, 36, humanVel (v, 0.04f));
+            }
+        } else if (int v = vel (at (tr.kick, c.s))) push (tm (c, jitterMs (1.5f)), ci, true, 36, humanVel (v));
         if (int v = vel (at (tr.snare, c.s))) push (tm (c, jitterMs (2.0f) + (v < 40 ? 4.0f : 0.0f)), ci, true, 38, humanVel (v, v < 40 ? 0.25f : 0.06f));
         const char h = at (tr.hat, c.s);
         const int hv = h == 'X' ? 105 : h == 'x' ? (c.q == 0 ? 82 : 62) : h == 'o' ? 80 : h == 'O' ? 105 : 0;
@@ -330,8 +340,10 @@ private:
         if (k == '_') return;
         const int midi = bassNoteFor (k) + (ch.role == 3 ? 12 : 0);
         int v = k == 'g' ? 45 : (c.q == 0 ? 100 : 86); if (state == Breakdown) v = 60;
-        off (lb + jitterMs (2) - 3);
-        push (tm (c, lb + jitterMs (2.5f)), ci, true, midi, humanVel (v));
+        const bool metal = style == MetalStyle;   // locked to the kick: tight timing, accents follow the picking intensity
+        if (metal && k != 'g' && state != Breakdown) v = (c.q == 0 ? 96 : 82) + (int) (20.0f * juce::jlimit (0.0f, 1.0f, fastInt));
+        off (lb + (metal ? 0.0f : jitterMs (2)) - 3);
+        push (tm (c, lb + jitterMs (metal ? 0.6f : 2.5f)), ci, true, midi, humanVel (v, metal ? 0.04f : 0.08f));
         if (k == 'g') push (tm (c, lb + 60), ci, false, midi, 1); else { ch.held[0] = midi; ch.nHeld = 1; }
     }
     std::string compPattern (ChairType t, int tierIdx) const {
@@ -343,6 +355,7 @@ private:
                 if (style == 1) return tierIdx == 0 ? "s-----s-s-----s-" : "s-ss-s-ss-ss-s-s";
                 if (style == 2) return tierIdx == 0 ? "C-------C-------" : "C-c-C-c-C-c-C-c-";
                 if (style == 3) return tierIdx == 0 ? "C_______________" : "C___c___C___c___";
+                if (style == MetalStyle) return tierIdx == 0 ? "s--s--s-s-------" : tierIdx == 1 ? "s-sss-sss-sss-ss" : "s-sss-sss-sss-ss";
                 return tierIdx == 0 ? "C_______C_______" : tierIdx == 1 ? "C_c_C_c_C_c_C_c_" : "CcCcCcCcCcCcCcCc";
             default: return g.tiers[tierIdx].keys;
         }
@@ -395,7 +408,8 @@ private:
         for (int i : chordIntervals (bandChord.type)) pcs[n++] = (bandChord.root + i) % 12;
         if (bandChord.type == Power) {
             // power chord from the player: keys/pads pick the diatonic third from the key so the band sounds major or minor
-            if (keyTonic >= 0 && ch.type != ChairType::RhythmGuitar) {
+            // (Metal keeps power chords as power chords: root + fifth + octave, no third)
+            if (keyTonic >= 0 && ch.type != ChairType::RhythmGuitar && style != MetalStyle) {
                 static const bool majD[12] = { 1,0,1,0,1,1,0,1,0,1,0,1 }, minD[12] = { 1,0,1,1,0,1,0,1,1,0,1,0 };
                 const int m3 = (bandChord.root + 3) % 12, d = ((m3 - keyTonic) % 12 + 12) % 12;
                 pcs[n++] = (keyMinor ? minD[d] : majD[d]) ? m3 : (bandChord.root + 4) % 12;

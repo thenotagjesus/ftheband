@@ -465,7 +465,7 @@ int runAnalyze (const juce::File& f) {
 }
 
 // ---------------------------------------------------------------------------------------------- --render-demo / --jam
-int styleIndex (juce::String s) { s = s.toLowerCase(); return s == "funk" ? 1 : s == "blues" ? 2 : s == "ballad" ? 3 : 0; }
+int styleIndex (juce::String s) { s = s.toLowerCase(); return s == "funk" ? 1 : s == "blues" ? 2 : s == "ballad" ? 3 : s == "metal" ? 4 : 0; }
 int keyIndex (juce::String k) { for (int i = 0; i < 12; ++i) if (k.equalsIgnoreCase (noteName (i))) return i; const char* fl[] = { "C","Db","D","Eb","E","F","Gb","G","Ab","A","Bb","B" }; for (int i = 0; i < 12; ++i) if (k.equalsIgnoreCase (fl[i])) return i; return 0; }
 std::vector<ChairType> parseChairs (const juce::String& s) {
     std::vector<ChairType> v; auto names = juce::StringArray::fromTokens (s, ",", "");
@@ -479,7 +479,7 @@ void mp3 (const juce::File& wav) {
     p.waitForProcessToFinish (120000);
 }
 int runRenderDemo (const juce::StringArray& a, int i) {
-    if (a.size() < i + 6) { out ("usage: --render-demo <rock|funk|blues|ballad> <bpm> <key> <seconds> <out.wav> [chairs]"); return 1; }
+    if (a.size() < i + 6) { out ("usage: --render-demo <rock|funk|blues|ballad|metal> <bpm> <key> <seconds> <out.wav> [chairs]"); return 1; }
     JamOptions o; o.style = styleIndex (a[i + 1]); o.bpm = a[i + 2].getDoubleValue(); const int key = keyIndex (a[i + 3]); const double secs = a[i + 4].getDoubleValue();
     juce::File outF (a[i + 5]); if (a.size() > i + 6) { auto c = parseChairs (a[i + 6]); if (! c.empty()) o.chairs = c; }
     const double barSec = 240.0 / o.bpm; const int bars = juce::jmax (8, (int) (secs / barSec));

@@ -53,7 +53,21 @@ inline const Groove& groove (int style) {
             { "X-------X-x-----X-x-----X-------", "----X-------X-------X-------X--g",
               "x-x-x-x-x-x-x-o-x-x-x-x-x-x-x-o-", "R_____R_5_______R_____R_5___3_a_", "C_______c_______C_______c___s___" } },
           { {12,41},{14,45},{15,48}, {10,38} }, 42 },
+        // Metal (Static-X / Lamb of God / Meshuggah feel): dead-straight and tight (no swing, nothing laid back).
+        // Tier 0 = half-time syncopated chug groove (snare on 3), tier 1 = gallop double kick with 8th-note backbeat,
+        // tier 2 = 16th double kick. The bass mirrors the kick rhythm on the root, every note cut short by a rest
+        // so it sits under palm-muted chugs instead of droning; keys stay out of the way (long held chords only).
+        // Band::drums() also gates the off-16th kicks on live picking intensity, so the double kick follows the player.
+        { "Metal", 0.0f, 0.0f, 0.0f, {
+            { "X--X--X-X-------X--X--X-X--x-x--", "--------X---------------X-------",
+              "x---x---x---x---x---x---x---x---", "R--R--R-R-------R--R--R-R--R-R--", "C_______________________________" },
+            { "X-xxX-xxX-xxX-xxX-xxX-xxX-xxX-xx", "----X-------X-------X-------X---",
+              "x-x-x-x-x-x-x-x-x-x-x-x-x-x-x-x-", "R-RRR-RRR-RRR-RRR-RRR-RRR-RRR-RR", "C_______________C_______________" },
+            { "XxxxXxxxXxxxXxxxXxxxXxxxXxxxXxxx", "----X-------X-------X-------X---",
+              "X-x-X-x-X-x-X-x-X-x-X-x-X-x-O-x-", "R-RRR-RRR-RRR-RRR-RRR-RRR-RR5-8-", "C_______________C_______________" } },
+          { {8,48},{9,48},{10,45},{11,45},{12,41},{13,41},{14,38},{15,38} }, 42 },
     };
-    return g[(style % 4 + 4) % 4];
+    constexpr int n = (int) (sizeof (g) / sizeof (g[0]));
+    return g[(style % n + n) % n];
 }
 } // namespace sj
