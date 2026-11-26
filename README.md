@@ -6,7 +6,7 @@ Version 0.2.0-beta. On first run FtheBand copies your saved settings, session an
 
 A play-along jam app with an adaptive backing band and per-track stem recording. See DESIGN.md for the architecture and roadmap.
 
-**Public beta:** download the Windows build from the [v0.1.0-beta release](https://github.com/thenotagjesus/ftheband/releases/tag/v0.1.0-beta). Ideas and suggestions go in [Discussions](https://github.com/thenotagjesus/ftheband/discussions), bugs in [Issues](https://github.com/thenotagjesus/ftheband/issues). FtheBand is free and open source (AGPL-3.0-only); pay what you want (suggested $3), and 50% of earnings go to cancer charities. The exe is not code-signed yet, so Windows SmartScreen or Smart App Control may warn about it.
+**Public beta:** download the Windows build from the [latest release](https://github.com/thenotagjesus/ftheband/releases/latest). Ideas and suggestions go in [Discussions](https://github.com/thenotagjesus/ftheband/discussions), bugs in [Issues](https://github.com/thenotagjesus/ftheband/issues). FtheBand is free and open source (AGPL-3.0-only); pay what you want (suggested $3), and 50% of earnings go to cancer charities. The exe is not code-signed yet, so Windows SmartScreen or Smart App Control may warn about it.
 
 ## Build (Windows 11, VS Build Tools 2022, CMake, Ninja, git)
 ```powershell
