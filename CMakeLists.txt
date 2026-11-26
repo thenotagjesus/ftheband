@@ -1,9 +1,11 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 # Copyright (C) 2026 FtheBand contributors
 cmake_minimum_required(VERSION 3.22)
-project(Ftheband VERSION 0.1.0 LANGUAGES C CXX)
-# Version shown to users (About box, window title, drift.log). CMake VERSION above stays numeric for the Windows resource.
-set(FTHEBAND_DISPLAY_VERSION "0.1.0-beta" CACHE STRING "Human-readable version string")
+project(Ftheband VERSION 0.2.0 LANGUAGES C CXX)
+# Version shown to users (About box, window title, drift.log). Comes only from this string, not from JUCE's numeric VERSION
+# (used for the Windows resource / ProductVersion). FORCE so a leftover cache from 0.1.0-beta cannot keep the old label.
+# CMake VERSION above stays numeric. CI reads this set() line and the project() VERSION.
+set(FTHEBAND_DISPLAY_VERSION "0.2.0-beta" CACHE STRING "Human-readable version string" FORCE)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 # Static C/C++ runtime (/MT) on MSVC so a fresh Windows PC needs no Visual C++ Redistributable. Must be set before any target is created.
@@ -43,6 +45,10 @@ option(FTHEBAND_FETCH_SAMPLES "Download the band sample library at configure tim
 set(FTHEBAND_SAMPLES_DIR "${CMAKE_CURRENT_SOURCE_DIR}/assets/samples" CACHE PATH "Where the band samples live")
 set(FTHEBAND_DONATE_URL "" CACHE STRING "Optional donate link shown in the About box (empty = hidden)")
 set(FTHEBAND_SOURCE_URL "https://github.com/thenotagjesus/ftheband" CACHE STRING "Public source URL shown in the About box (AGPL: point users to the corresponding source)")
+# An empty cache (older CMakeLists, or -DFTHEBAND_SOURCE_URL=) must not hide the default. release.yml and package-win.ps1 do not pass this flag.
+if(FTHEBAND_SOURCE_URL STREQUAL "")
+    set(FTHEBAND_SOURCE_URL "https://github.com/thenotagjesus/ftheband" CACHE STRING "Public source URL shown in the About box (AGPL: point users to the corresponding source)" FORCE)
+endif()
 # Commit this binary is built from (shown in the About box and used for SOURCE.txt). Pass -DFTHEBAND_COMMIT=<hash> when building from a source archive without .git.
 set(FTHEBAND_COMMIT "" CACHE STRING "Git commit of the source this build comes from")
 if(NOT FTHEBAND_COMMIT)
@@ -70,7 +76,7 @@ juce_add_gui_app(Ftheband
     BUNDLE_ID "com.ftheband.app"
     ICON_BIG "${CMAKE_CURRENT_SOURCE_DIR}/Resources/icon/ftheband-icon-1024.png"
     ICON_SMALL "${CMAKE_CURRENT_SOURCE_DIR}/Resources/icon/ftheband-icon-32.png"
-    VERSION 0.1.0)
+    VERSION ${PROJECT_VERSION})
 juce_generate_juce_header(Ftheband)
 
 target_sources(Ftheband PRIVATE

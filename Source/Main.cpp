@@ -8,7 +8,7 @@
 #include "Setup/FirstRunSetup.h"
 
 #ifndef FTHEBAND_DISPLAY_VERSION
- #define FTHEBAND_DISPLAY_VERSION "0.1.0-beta"
+ #define FTHEBAND_DISPLAY_VERSION "0.2.0-beta"
 #endif
 
 class FthebandApp : public juce::JUCEApplication {

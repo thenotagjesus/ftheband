@@ -9,19 +9,16 @@
 using namespace sj;
 
 #ifndef FTHEBAND_DISPLAY_VERSION
- #define FTHEBAND_DISPLAY_VERSION "0.1.0-beta"
+ #define FTHEBAND_DISPLAY_VERSION "0.2.0-beta"
 #endif
 #ifndef FTHEBAND_DONATE_URL
  #define FTHEBAND_DONATE_URL ""
-#endif
-#ifndef FTHEBAND_DISPLAY_VERSION
- #define FTHEBAND_DISPLAY_VERSION "0.1.0-beta"
 #endif
 #ifndef FTHEBAND_COMMIT
  #define FTHEBAND_COMMIT ""
 #endif
 #ifndef FTHEBAND_SOURCE_URL
- #define FTHEBAND_SOURCE_URL ""
+ #define FTHEBAND_SOURCE_URL "https://github.com/thenotagjesus/ftheband"
 #endif
 
 namespace {
