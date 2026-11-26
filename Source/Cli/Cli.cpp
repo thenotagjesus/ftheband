@@ -4,6 +4,7 @@
 #include "Analysis/ChordTracker.h"
 #include "Analysis/Loudness.h"
 #include "Engine/Band.h"
+#include "Engine/MetalDrive.h"
 #include "Test/GuitarSynth.h"
 #include <cstdio>
 #include <map>
@@ -636,6 +637,46 @@ int runDriftTest (const juce::StringArray& a, int i) {
     return 0;
 }
 
+// ---------------------------------------------------------------------------------------------- --drive-test
+/** Offline check of the Inserts-page metal drive: level, DC, cab roll-off and inharmonic (aliasing) energy, NaN guard. */
+int runDriveTest() {
+    const double sr = 48000; const int B = 256, N = 1 << 15; bool ok = true;
+    auto render = [&] (float gain, float tone, double freq, float amp, std::vector<float>& y) {
+        MetalDrive d; d.gain = gain; d.tone = tone; d.level = 0.5f; d.prepare (sr, B);
+        const int total = N + 8192; y.assign ((size_t) total, 0.0f);
+        for (int i = 0; i < total; ++i) y[(size_t) i] = amp * (float) std::sin (juce::MathConstants<double>::twoPi * freq * i / sr);
+        for (int p = 0; p < total; p += B) d.process (y.data() + p, juce::jmin (B, total - p));
+        y.erase (y.begin(), y.begin() + 8192);   // drop the settling part
+    };
+    juce::dsp::FFT fft (15); std::vector<float> w ((size_t) N * 2);
+    auto spectrum = [&] (const std::vector<float>& y) {
+        std::fill (w.begin(), w.end(), 0.0f);
+        for (int i = 0; i < N; ++i) w[(size_t) i] = y[(size_t) i] * (float) (0.5 - 0.5 * std::cos (juce::MathConstants<double>::twoPi * i / (N - 1)));
+        fft.performFrequencyOnlyForwardTransform (w.data()); };
+    for (float g : { 0.0f, 0.5f, 1.0f }) {
+        std::vector<float> y; render (g, 0.5f, 110.0, 0.3f, y);
+        double sum = 0, sq = 0; float pk = 0; bool nan = false;
+        for (float v : y) { sum += v; sq += (double) v * v; pk = juce::jmax (pk, std::abs (v)); nan |= ! std::isfinite (v); }
+        spectrum (y); double lo = 0, hi = 0; const double bin = sr / N;
+        for (int k = 1; k < N / 2; ++k) { const double e = (double) w[(size_t) k] * w[(size_t) k]; (k * bin > 9000 ? hi : lo) += e; }
+        const double rmsDb = 10 * std::log10 (sq / (double) y.size() + 1e-20), dc = sum / (double) y.size(), hiDb = 10 * std::log10 (hi / (lo + 1e-20) + 1e-20);
+        out ("drive gain " + juce::String (g, 1) + ": 110 Hz in -> out RMS " + juce::String (rmsDb, 1) + " dBFS, peak " + juce::String (pk, 3)
+             + ", DC " + juce::String (dc, 5) + ", energy above 9 kHz " + juce::String (hiDb, 1) + " dB re below" + (nan ? "  NaN!" : ""));
+        ok &= ! nan && pk < 2.0f && std::abs (dc) < 0.01 && hiDb < -30;
+    }
+    {   // aliasing: a 3.1 kHz tone at full gain; energy outside the harmonics of 3.1 kHz (below 20 kHz) relative to the harmonics
+        const double f = 3100.0; std::vector<float> y; render (1.0f, 1.0f, f, 0.5f, y); spectrum (y);
+        double harm = 0, inh = 0; const double bin = sr / N;
+        for (int k = 4; k < (int) (20000 / bin); ++k) { const double fk = k * bin, e = (double) w[(size_t) k] * w[(size_t) k];
+            const double h = std::round (fk / f); (h >= 1 && std::abs (fk - h * f) < 6 * bin ? harm : inh) += e; }
+        const double aDb = 10 * std::log10 (inh / (harm + 1e-20) + 1e-20);
+        out ("drive aliasing: 3.1 kHz at full gain/bright, inharmonic energy " + juce::String (aDb, 1) + " dB re harmonics (8x oversampled)");
+        ok &= aDb < -35;
+    }
+    out (ok ? "drive-test PASS" : "drive-test FAIL");
+    return ok ? 0 : 1;
+}
+
 int runCli (const juce::StringArray& args) {
     for (int i = 0; i < args.size(); ++i) {
         if (args[i] == "--instrument" && args.size() > i + 1) gInstrument = inputInstrumentFromId (args[i + 1]);
@@ -656,6 +697,7 @@ int runCli (const juce::StringArray& args) {
         if (args[i] == "--render-demo") return runRenderDemo (args, i);
         if (args[i] == "--jam") return runJam (args, i);
         if (args[i] == "--drift-test") return runDriftTest (args, i);
+        if (args[i] == "--drive-test") return runDriveTest();
     }
     return -1;
 }

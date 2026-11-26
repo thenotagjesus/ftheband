@@ -10,6 +10,7 @@
 #include "Recording/StemRecorder.h"
 #include "Engine/PluginChain.h"
 #include "Engine/StemDelay.h"
+#include "Engine/MetalDrive.h"
 
 namespace sj {
 
@@ -68,7 +69,8 @@ public:
     std::atomic<int> style { 0 };
     std::atomic<float> fallbackBpm { 100 };          // band tempo until a count-in locks
     std::atomic<bool> monitorGuitar { true };
-    std::atomic<bool> placeholderDrive { false };   // tanh(4x) soft-clip ahead of the inserts: OFF by default (clean DI until the player asks for it)
+    std::atomic<bool> placeholderDrive { false };   // metal drive (MetalDrive.h) ahead of the inserts: OFF by default (clean DI until the player asks for it). Name kept for saved settings.
+    MetalDrive drive;                               // gain/tone/level atomics live in here
     std::atomic<float> guitarGain { 1.0f }, masterGain { 0.8f };
     std::atomic<int> instrument { (int) InputInstrument::BassVI }, tuning { (int) Tuning::Standard };
     std::atomic<float> customCents { 0 };
@@ -178,7 +180,7 @@ private:
     std::atomic<int> outLatSmp { 0 }, guitarInSmp { 0 }, micInSmp { 0 }, followerRt { 0 };
     FollowerState follower; uint32_t seenLock = 0, seenSession = 0;
     int64_t sessionClock = 0;           // samples since the current session started (== band clock)
-    std::atomic<uint32_t> sessionRequest { 0 }; uint32_t sessionApplied = 0;
+    std::atomic<uint32_t> sessionRequest { 0 }; uint32_t sessionApplied = 0; bool driveWasOn = false;
 
     // audio -> analysis (lock-free; the analysis thread polls, the audio thread never signals)
     juce::AbstractFifo fifo { 1 << 17 };

@@ -381,19 +381,31 @@ struct BandPage : Content {
 // ================================================================================================ Inserts
 struct InsertsPage : Content {
     AudioEngine& e; PluginLibrary& lib;
-    PluginSlotsPanel slots; juce::TextButton scan { "Plug-ins..." }; juce::ToggleButton drive { "Placeholder drive (distortion)" }; juce::Label help, help2, latency;
+    PluginSlotsPanel slots; juce::TextButton scan { "Plug-ins..." }; juce::ToggleButton drive { "Metal drive (distortion)" }; juce::Label help, help2, latency;
+    juce::Slider dGain, dTone, dLevel; juce::Label dGainL { {}, "Gain" }, dToneL { {}, "Tone" }, dLevelL { {}, "Level" };
     std::function<void()> onChanged;
     InsertsPage (AudioEngine& en, PluginLibrary& l) : e (en), lib (l), slots (en.plugins) {
-        for (auto* c : std::initializer_list<juce::Component*> { &slots, &scan, &drive, &help, &help2, &latency }) addAndMakeVisible (c);
+        for (auto* c : std::initializer_list<juce::Component*> { &slots, &scan, &drive, &help, &help2, &latency, &dGain, &dTone, &dLevel, &dGainL, &dToneL, &dLevelL }) addAndMakeVisible (c);
         drive.setToggleState (e.placeholderDrive.load(), juce::dontSendNotification);
-        drive.setTooltip ("Soft-clip distortion ahead of the inserts. Off = clean guitar; turn on only if you have no amp sim loaded.");
-        drive.onClick = [this] { e.placeholderDrive = drive.getToggleState(); };
+        drive.setTooltip ("Tight metal distortion ahead of the inserts (input high-pass, 8x oversampled asymmetric clipper, post EQ, cab-style low-pass).\n"
+                          "Off = clean guitar (the default); leave it off if you load an amp sim in the inserts.");
+        drive.onClick = [this] { e.placeholderDrive = drive.getToggleState(); updateDriveEnables(); };
+        auto knob = [this] (juce::Slider& k, juce::Label& lab, std::atomic<float>& target, const juce::String& tip) {
+            k.setSliderStyle (juce::Slider::RotaryHorizontalVerticalDrag); k.setTextBoxStyle (juce::Slider::NoTextBox, false, 0, 0);
+            k.setRange (0.0, 1.0, 0.01); k.setValue (target.load(), juce::dontSendNotification); k.setDoubleClickReturnValue (true, 0.5);
+            k.setTooltip (tip); k.onValueChange = [&k, &target] { target = (float) k.getValue(); };
+            styleLabel (lab, 13, textDim); lab.setJustificationType (juce::Justification::centred);
+        };
+        knob (dGain, dGainL, e.drive.gain, "Drive gain: how hard the guitar hits the clipper (+6..+48 dB). More gain also tightens the low end.");
+        knob (dTone, dToneL, e.drive.tone, "Tone: presence and cab brightness (dark ... bright)");
+        knob (dLevel, dLevelL, e.drive.level, "Output level of the drive (-24..+6 dB, loudness roughly matched across gain)");
+        updateDriveEnables();
         styleLabel (help, 14, textDim); styleLabel (help2, 14, textDim); styleLabel (latency, 15);
         help2.setJustificationType (juce::Justification::topLeft);
         help2.setText ("Inserts run inside the audio callback on the same samples (no extra buffer of delay); only a plug-in's own reported\n"
                        "latency adds to what you hear. Recorded stems are delay-compensated: DI, band and mic are shifted to line up with GuitarFX.",
                        juce::dontSendNotification);
-        help.setText ("Four VST3 inserts on the input (after the optional placeholder drive - off by default - before the GuitarFX stem). The DI stem is always recorded dry.",
+        help.setText ("Four VST3 inserts on the input (after the optional metal drive - off by default - before the GuitarFX stem). The DI stem is always recorded dry.",
                       juce::dontSendNotification);
         scan.onClick = [this] { lib.showScanner(); };
         slots.refresh();
@@ -401,10 +413,15 @@ struct InsertsPage : Content {
     void resized() override {
         auto r = getLocalBounds().reduced (16);
         auto row = r.removeFromTop (32); scan.setBounds (row.removeFromLeft (140)); row.removeFromLeft (16); drive.setBounds (row.removeFromLeft (250)); row.removeFromLeft (16); latency.setBounds (row);
+        r.removeFromTop (4);
+        auto knobs = r.removeFromTop (74).withTrimmedLeft (156);
+        for (auto [k, lab] : { std::pair<juce::Slider*, juce::Label*> { &dGain, &dGainL }, { &dTone, &dToneL }, { &dLevel, &dLevelL } }) {
+            auto cell = knobs.removeFromLeft (76); lab->setBounds (cell.removeFromBottom (18)); k->setBounds (cell.withSizeKeepingCentre (56, 56)); }
         r.removeFromTop (8); help.setBounds (r.removeFromTop (24)); r.removeFromTop (8);
         slots.setBounds (r.removeFromTop (4 * 30 + 8).removeFromLeft (720));
         r.removeFromTop (8); help2.setBounds (r.removeFromTop (40).removeFromLeft (900));
     }
+    void updateDriveEnables() { const bool on = drive.getToggleState(); for (auto* c : std::initializer_list<juce::Component*> { &dGain, &dTone, &dLevel, &dGainL, &dToneL, &dLevelL }) c->setEnabled (on); }
     void paint (juce::Graphics& g) override { g.fillAll (bg); }
     void tick() override {
         const int lat = e.plugins.getTotalLatencySamples(); const double sr = e.getSampleRate();
@@ -751,7 +768,7 @@ MainComponent::MainComponent (bool openAudio) : audioOpen (openAudio)
     add ("Jam", jam, 1200, 600);
     setWantsKeyboardFocus (true);
     add ("Band", new BandPage (*this, engine), 1200, 560);
-    auto* ins = new InsertsPage (engine, pluginLibrary); add ("Inserts", ins, 800, 260);
+    auto* ins = new InsertsPage (engine, pluginLibrary); add ("Inserts", ins, 800, 340);
     add ("Audio", new AudioPage (*this), 1150, 690);
     add ("Get more sounds", new SoundsPage (engine), 1200, 600);
     add ("About", new AboutPage (*this, donateUrl), 900, 640);
@@ -1391,6 +1408,9 @@ void MainComponent::loadSession()
     engine.monitorGuitar = x.getBoolAttribute ("monitor", true);
     engine.guitarGain = (float) x.getDoubleAttribute ("inputGain", 1.0);
     engine.placeholderDrive = x.getBoolAttribute ("placeholderDrive", false);
+    engine.drive.gain = (float) juce::jlimit (0.0, 1.0, x.getDoubleAttribute ("driveGain", 0.6));
+    engine.drive.tone = (float) juce::jlimit (0.0, 1.0, x.getDoubleAttribute ("driveTone", 0.5));
+    engine.drive.level = (float) juce::jlimit (0.0, 1.0, x.getDoubleAttribute ("driveLevel", 0.5));
     engine.masterGain = (float) x.getDoubleAttribute ("masterGain", 0.8);
     uiScale = (float) x.getDoubleAttribute ("uiScale", 0);
     if (x.hasAttribute ("donateUrl")) donateUrl = x.getStringAttribute ("donateUrl");
@@ -1420,6 +1440,7 @@ void MainComponent::saveSession()
     root.setAttribute ("style", styleNames[engine.style.load()]); root.setAttribute ("fallbackBpm", engine.fallbackBpm.load()); root.setAttribute ("holdBars", engine.holdBars.load());
     root.setAttribute ("startMode", engine.startMode.load() == 1 ? "button" : "play"); root.setAttribute ("countInClick", engine.countInClick.load());
     root.setAttribute ("monitor", engine.monitorGuitar.load()); root.setAttribute ("inputGain", engine.guitarGain.load()); root.setAttribute ("placeholderDrive", engine.placeholderDrive.load());
+    root.setAttribute ("driveGain", engine.drive.gain.load()); root.setAttribute ("driveTone", engine.drive.tone.load()); root.setAttribute ("driveLevel", engine.drive.level.load());
     root.setAttribute ("masterGain", engine.masterGain.load()); root.setAttribute ("uiScale", uiScale); root.setAttribute ("donateUrl", donateUrl);
     root.setAttribute ("skin", skin == 1 ? "page" : "default");
     auto* cs = root.createNewChildElement ("Chairs");

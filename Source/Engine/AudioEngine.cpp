@@ -116,6 +116,7 @@ void AudioEngine::prepareOffline (double sr, int bs)
 {
     sampleRate = sr; blockSize = bs;
     buses.setSize (NumBuses, MaxChunk, false, true, true); recTap.setSize (NumBuses, MaxChunk, false, true, true);
+    drive.prepare (sampleRate.load(), MaxChunk);
     plugins.prepare (sampleRate.load(), MaxChunk);    // the chain only ever sees MaxChunk-sized pieces (no extra block of delay)
     updateStemDelays();
     band.collectGarbage();
@@ -169,8 +170,9 @@ void AudioEngine::processChunk (const float* in, const float* mic, float* const*
     if (in != nullptr) juce::FloatVectorOperations::copy (di, in, n);
 
     float peak = 0, sumSq = 0; const bool drv = placeholderDrive.load();
-    for (int i = 0; i < n; ++i) { const float x = di[i]; peak = juce::jmax (peak, std::abs (x)); sumSq += x * x;
-        fx[i] = drv ? std::tanh (4.0f * x) * 0.5f : x; }          // optional placeholder drive (amp sim goes in the inserts); clean DI by default
+    for (int i = 0; i < n; ++i) { const float x = di[i]; peak = juce::jmax (peak, std::abs (x)); sumSq += x * x; fx[i] = x; }
+    if (drv) { if (! driveWasOn) drive.reset(); drive.process (fx, n); }   // optional metal drive (MetalDrive.h); clean DI by default, DI stem always dry
+    driveWasOn = drv;
     inputPeak = juce::jmax (peak, inputPeak.load() * 0.95f); inputRms = std::sqrt (sumSq / (float) juce::jmax (1, n));
     plugins.process (fx, n);
 
