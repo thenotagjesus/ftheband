@@ -7,7 +7,7 @@ as a sample-aligned stem. AGPL-3.0-only.
 ## 1. Threads
 | Thread | Work |
 |---|---|
-| Audio (`AudioEngine::audioDeviceIOCallbackWithContext`) | Splits each device block into chunks of at most 512 samples (`processChunk`). Each chunk runs: input gain → placeholder drive → `PluginChain` → band → mix with equal-power pans → `StemRecorder::write()` → push the raw input to the analysis FIFO. There is no allocation and no blocking lock; the buses are pre-sized in `prepareOffline`. |
+| Audio (`AudioEngine::audioDeviceIOCallbackWithContext`) | Splits each device block into chunks of at most 512 samples (`processChunk`). Each chunk runs: input gain → optional metal drive (off by default) → `PluginChain` → band → mix with equal-power pans → `StemRecorder::write()` → push the raw input to the analysis FIFO. There is no allocation and no blocking lock; the buses are pre-sized in `prepareOffline`. |
 | Analysis (`AudioEngine::run`) | **Polls** a lock-free `AbstractFifo` every 2 ms (an atomic flag and polling, never a signal from the audio thread). Feeds `ChordTracker` and publishes `EngineStatus` through a triple buffer. |
 | Stem writer (`StemRecorder`, a `juce::Thread`) | Drains one interleaved lock-free FIFO into per-stem 24-bit WAV writers. |
 | Message (UI) | Tabs, a 30 Hz status timer, chair edits (a new `BandConfig` is built here and swapped in atomically), and the plug-in editors. |
@@ -27,8 +27,8 @@ never act on a previous session's data. When the tracker reports a **locked** te
 - The target hardware is a USB guitar interface (class-compliant cable, mono, 48 kHz) as input and onboard Realtek as output.
 - Device policy (`MainComponent::setupAudioDevices`): first the saved state in `session.xml`. Then, **Windows only (`#if JUCE_WINDOWS`)**,
   ASIO4ALL at 48 kHz/64–128 samples, then WASAPI shared with the USB guitar interface (auto-detected from the cable's device name). The last resort is the platform default (ALSA/JACK).
-- **Not implemented (deliberately, review item 02):** latency compensation. (Item 01, the drift resampler, is now implemented; see the end of this file.)
-  of the stems. The stems stay aligned *with each other* because every stem is written from the same callback.
+- **Stem latency compensation (review item 02):** in progress (Victor's branch). (Item 01, the drift resampler, is now implemented; see the end of this file.)
+  Plug-in reported latency is shown on the Inserts tab. The metal drive's oversampler latency is reported (`MetalDrive::latencySamples`) but is not yet included in stem compensation. The stems stay aligned *with each other* because every stem is written from the same callback.
 
 ## 3. Analysis (`Source/Analysis/ChordTracker.h`)
 - **Input profile** (`Music/InputInstrument.h`): the instrument plus a **Tuning** (Standard, −1, −2, Drop D, Custom cents) set the

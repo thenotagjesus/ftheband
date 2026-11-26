@@ -2,7 +2,7 @@
 
 Free software under the GNU AGPL v3. Source code: https://github.com/thenotagjesus/ftheband (see `SOURCE.txt`).
 
-Version 0.1.0-beta. On first run FtheBand copies your saved settings, session and log from the old `%APPDATA%\SessionJam\` folder (`~/.config/SessionJam/` on Linux) into `Ftheband\`; the old folder is left untouched. Recordings now go to `Music/Ftheband Takes`; takes already saved in `Music/SessionJam Takes` are not moved.
+Version 0.2.0-beta. On first run FtheBand copies your saved settings, session and log from the old `%APPDATA%\SessionJam\` folder (`~/.config/SessionJam/` on Linux) into `Ftheband\`; the old folder is left untouched. Recordings now go to `Music/Ftheband Takes`; takes already saved in `Music/SessionJam Takes` are not moved.
 
 A play-along jam app with an adaptive backing band and per-track stem recording. See DESIGN.md for the architecture and roadmap.
 
@@ -14,7 +14,7 @@ A play-along jam app with an adaptive backing band and per-track stem recording.
 .\build.ps1 -NoAsio    # WASAPI/DirectSound only
 .\build.ps1 -AsioSdk C:\sdk\ASIOSDK   # use a local SDK
 ```
-The output is `build\Ftheband_artefacts\Release\FtheBand.exe`. To make a release zip (`dist\FtheBand-0.1.0-beta-win-x64.zip`) run `.\tools\package-win.ps1 -Commit <git-hash>` (the hash is stamped into `SOURCE.txt`; it is read from git if you omit it): it builds, downloads the six CC0 sample packs listed in `catalog\packs.json` (cached in `%LOCALAPPDATA%\Ftheband-pack-cache`, every file checked against its SHA-256) and lays everything out next to `FtheBand.exe` (see "What is in the zip" below). Use `-NoBaseSamples` to leave out the base drum/bass/keys set, or `-PackCache <dir>` to choose the cache folder. JUCE 8.0.8 is fetched by CMake FetchContent. The ASIO SDK comes from Steinberg's official download (https://www.steinberg.net/asiosdk, dual GPLv3/proprietary licence), pinned to 2.3.4 with a SHA-256 check.
+The output is `build\Ftheband_artefacts\Release\FtheBand.exe`. To make a release zip (`dist\FtheBand-0.2.0-beta-win-x64.zip`) run `.\tools\package-win.ps1 -Commit <git-hash>` (the hash is stamped into `SOURCE.txt`; it is read from git if you omit it): it builds, downloads the six CC0 sample packs listed in `catalog\packs.json` (cached in `%LOCALAPPDATA%\Ftheband-pack-cache`, every file checked against its SHA-256) and lays everything out next to `FtheBand.exe` (see "What is in the zip" below). Use `-NoBaseSamples` to leave out the base drum/bass/keys set, or `-PackCache <dir>` to choose the cache folder. JUCE 8.0.8 is fetched by CMake FetchContent. The ASIO SDK comes from Steinberg's official download (https://www.steinberg.net/asiosdk, dual GPLv3/proprietary licence), pinned to 2.3.4 with a SHA-256 check.
 
 ### Plug-in hosting (VST3 / VST2 / VST1)
 - **VST3** hosting is always built in, on Windows and Linux.
@@ -76,8 +76,8 @@ The cable and the Realtek have separate clocks, so expect a possible occasional 
 1. On the **Inserts** tab, click **Plug-ins...**, then **Options... → Scan for new or updated VST3 plug-ins**. The scan starts with the default folders (`C:\Program Files\Common Files\VST3`; on Linux `~/.vst3`, `/usr/lib/vst3`, `/usr/local/lib/vst3`). Add your own folders in that prompt; they are remembered. On a VST2 build there is also a VST scan option, so you can add your `VstPlugins` folder.
 2. The plug-in list is saved to `%APPDATA%\Ftheband\plugins.xml`. A plug-in that crashes the scanner is blacklisted on the next scan.
 3. Click an **Insert 1–4** slot, choose **Load plug-in**, and pick your amp sim. Its editor opens in its own window; use **Edit** to reopen it. Each slot has a **Bypass** toggle.
-4. The signal path is: guitar → placeholder drive → Insert 1 → 2 → 3 → 4 → GuitarFX fader → *GuitarFX stem* and speakers. The **GuitarDI stem is always dry**, so you can re-amp it later.
-5. Total plug-in latency (`getLatencySamples` of the active slots) is shown above the slots. While a plug-in is being swapped, the dry signal is delayed by that same latency, so the sound does not jump. The stems are not latency-compensated: GuitarFX lags the DI and band by that amount.
+4. The signal path is: guitar → optional metal drive (off by default; Gain / Tone / Level on the Inserts tab) → Insert 1 → 2 → 3 → 4 → GuitarFX fader → *GuitarFX stem* and speakers. The **GuitarDI stem is always dry**, so you can re-amp it later.
+5. Total plug-in latency (`getLatencySamples` of the active slots) is shown above the slots. While a plug-in is being swapped, the dry signal is delayed by that same latency, so the sound does not jump. Stem latency compensation is in progress (Victor's branch). The metal drive's oversampler latency is reported but not yet compensated, so when the drive is on, GuitarFX may lag the DI and band by that amount.
 6. Loaded plug-ins, their full state and bypass settings are saved with the device setup in `%APPDATA%\Ftheband\session.xml` and restored at launch.
 
 ## Use
@@ -98,8 +98,8 @@ The cable and the Realtek have separate clocks, so expect a possible occasional 
   and riffs are all expected. The band's bass chair plays normally by default. Two optional toggles, both off by default:
   **Bass chair octave up** (the bass moves up an octave and plays sparse roots and fifths) and **Mute bass chair**.
 
-**Band tab:** this holds the style, fallback tempo, master and input level, and up to 8 **chairs** (Drums, Bass, Keys/EP, Organ, Pad,
-Rhythm guitar), each with a role, gain, mute and solo. **Inserts tab:** amp sims (see above). **Audio tab:** device setup.
+**Band tab:** this holds the style (Rock, Funk, Blues, Ballad, or Metal: tight double-kick and root-locked chug bass that follow how hard you pick), fallback tempo, master and input level, and up to 8 **chairs** (Drums, Bass, Keys/EP, Organ, Pad,
+Rhythm guitar), each with a role, gain, mute and solo. **Inserts tab:** the optional metal drive and amp-sim inserts (see above). **Audio tab:** device setup.
 **About tab:** version, licence, credits, and a Donate link if one is configured.
 
 **Record stems** writes aligned 24-bit WAVs (GuitarDI, GuitarFX and one per chair) to `Music/Ftheband Takes`.
@@ -161,7 +161,7 @@ the two devices separate:
 * Split-input FIFO is adaptive: it starts safe, learns the input jitter for ~8 s, then settles at the smallest safe target
   (e.g. ~17 ms instead of 28 ms with a 480-sample WASAPI input). Audio tab: "Low-latency input mode" tries WASAPI
   IAudioClient3 at the smallest period first (falls back automatically); "Output buffer" picks the ASIO/WASAPI buffer (64-128 recommended).
-* The Jam tab shows FIFO + driver in/out + insert latency = total. Recorded stems are delay-compensated (PDC + round trip);
-  use "Recording trim" if your takes are still offset.
+* The Jam tab shows FIFO + driver in/out + insert latency = total. Recorded stems are delay-compensated for plug-in (PDC) and round-trip latency;
+  stem compensation is otherwise in progress (Victor's branch), and the metal drive's oversampler latency is reported but not yet included. Use "Recording trim" if your takes are still offset.
 * Microphone: pick it on the Audio tab; gain, meter and "Monitor mic" (default off) on the Jam tab. It is recorded as its own
   sample-aligned "Mic" stem and never feeds the chord/tempo follower.
