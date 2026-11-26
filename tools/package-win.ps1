@@ -8,8 +8,8 @@
 #   (no drivers or installers: FlexASIO is downloaded by the app from its official release only on the player's click; ASIO4ALL is only a link)
 # ASIO4ALL is NOT bundled (its licence forbids redistribution); the README links to https://asio4all.org.
 # Downloads are cached in -PackCache (default %LOCALAPPDATA%\Ftheband-pack-cache) and every file is checked against the sha256 in the catalog / pinned below.
-# Usage: .\tools\package-win.ps1 [-Version 0.1.0-beta] [-SkipBuild] [-Clean] [-AsioSdk C:\path\to\asiosdk] [-PackCache D:\cache] [-NoBaseSamples] [-NoPacks]
-param([string]$Version = "0.1.0-beta", [switch]$SkipBuild, [switch]$Clean, [string]$AsioSdk = "", [string]$PackCache = "",
+# Usage: .\tools\package-win.ps1 [-Version 0.2.0-beta] [-SkipBuild] [-Clean] [-AsioSdk C:\path\to\asiosdk] [-PackCache D:\cache] [-NoBaseSamples] [-NoPacks]
+param([string]$Version = "0.2.0-beta", [switch]$SkipBuild, [switch]$Clean, [string]$AsioSdk = "", [string]$PackCache = "",
       [switch]$NoBaseSamples, [switch]$NoPacks, [string]$Commit = "")
 $ErrorActionPreference = "Stop"
 $ProgressPreference = "SilentlyContinue"
@@ -88,7 +88,7 @@ if (-not $NoPacks) {
     [void]$credits.AppendLine("Sample packs bundled with FtheBand (all CC0 1.0 unless stated). Files are unmodified upstream samples, verified by SHA-256.")
     [void]$credits.AppendLine("FtheBand's own list and licence evidence: CREDITS.md. Pack-level metadata: packs\<id>\pack.json")
     [void]$credits.AppendLine("")
-    [void]$credits.AppendLine("Keys (base set, samples\keys): Wurlitzer EP200 Electric Piano v1.1 by Greg Sullivan (http://www.sullivang.net/), SFZ mapping by kinwie, from https://github.com/sfzinstruments/GregSullivan.E-Pianos (commit 8c3e581acda3594b553948ff0222d4f84a698376). Licensed under Creative Commons Attribution 3.0 Unported, https://creativecommons.org/licenses/by/3.0/ . Used without endorsement by the author.")
+    [void]$credits.AppendLine("Keys (base set, samples\keys): Wurlitzer EP200 Electric Piano v1.1 by Greg Sullivan (http://www.sullivang.net/), SFZ mapping by kinwie, from https://github.com/sfzinstruments/GregSullivan.E-Pianos (commit 8c3e581acda3594b553948ff0222d4f84a698376). Licensed under Creative Commons Attribution 3.0 Unported, https://creativecommons.org/licenses/by/3.0/ . Unmodified; resampled and re-pitched on playback. Used without endorsement by the author.")
     [void]$credits.AppendLine("")
     $nFiles = 0; $nBytes = 0; $nDown = 0
     foreach ($p in $catalog) {
